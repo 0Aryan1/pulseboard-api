@@ -1,6 +1,8 @@
 node_modules/
 
 .env
+.env.*
+!.env.example
 .env.local
 .env.development
 .env.production
@@ -32,3 +34,7 @@ skills-lock.json
 future_scope.md
 # Uploaded attachments (written at runtime by multer)
 uploads/
+
+
+# Local database dumps (contain real data)
+/pulseboard_*.sql
