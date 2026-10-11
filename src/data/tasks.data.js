@@ -1,6 +1,6 @@
 import prisma from "../prisma.js";
 
-function formatTask(task) {
+export function formatTask(task) {
   return {
     id: task.id,
     title: task.title,
@@ -18,9 +18,6 @@ export async function getProjectTasks(projectId) {
   const tasks = await prisma.tasks.findMany({
     where: {
       project_id: projectId,
-      created_by: {
-        not: null,
-      },
     },
     include: {
       users: {
@@ -44,9 +41,6 @@ export async function getProjectTasksById(projectId, taskId) {
     where: {
       project_id: projectId,
       id: taskId,
-      created_by: {
-        not: null,
-      },
     },
     include: {
       users: {

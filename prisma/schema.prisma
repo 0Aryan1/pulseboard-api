@@ -25,8 +25,10 @@ model comments {
   task_id    Int
   created_at DateTime @default(now()) @db.Timestamp(6)
   created_by Int?
+  users      users?   @relation(fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
   tasks      tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users      users?   @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([task_id], map: "idx_comments_task_id")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -62,8 +64,11 @@ model tasks {
   created_by  Int?
   attachments attachments[]
   comments    comments[]
+  users       users?        @relation(fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
   projects    projects      @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users       users?        @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([project_id], map: "idx_tasks_project_id")
+  @@index([status], map: "idx_tasks_status")
 }
 
 model users {

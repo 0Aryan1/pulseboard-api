@@ -8,8 +8,8 @@ const router = express.Router();
 router.get("/", authMiddleware, getAllProjectsController);
 router.get("/:projectId", authMiddleware,  projectRoleMiddleware(["Admin", "Member"]), getProjectByIdController);
 router.post("/", authMiddleware, createProjectController);
-router.put("/:projectId", authMiddleware,  projectRoleMiddleware("Admin"),updateProjectController);
+router.put("/:projectId", authMiddleware,  projectRoleMiddleware(["Admin"]),updateProjectController);
 router.put("/:projectId/owner", authMiddleware, projectRoleMiddleware(["Admin"]), transferProjectOwnershipController);
-router.delete("/:projectId", authMiddleware, projectRoleMiddleware("Admin"), deleteProjectController);
+router.delete("/:projectId", authMiddleware, projectRoleMiddleware(["Admin"]), deleteProjectController);
 
 export default router;

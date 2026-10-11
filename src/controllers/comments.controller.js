@@ -13,6 +13,20 @@ import {
 } from "../data/comments.data.js";
 import { emitToProject } from "../socket.js";
 
+// Members manage their own comments; Admins can moderate anyone's.
+function canManageComment(req, comment) {
+  return comment.created_by === req.user.id || req.projectRole === "Admin";
+}
+
+function sendCommentForbidden(res) {
+  return sendError(
+    res,
+    403,
+    "FORBIDDEN",
+    "You can only edit or delete your own comments",
+  );
+}
+
 export const getCommentsController = async (req, res) => {
   const taskId = Number(req.params.taskId);
 
@@ -127,6 +141,16 @@ export const updateCommentController = async (req, res) => {
     );
   }
 
+  const comment = await getCommentById(taskId, commentId);
+
+  if (!comment) {
+    return sendError(res, 404, "NOT_FOUND", "Comment not found");
+  }
+
+  if (!canManageComment(req, comment)) {
+    return sendCommentForbidden(res);
+  }
+
   const updatedComment = await updateComment(taskId, commentId, result.data);
 
   if (!updatedComment) {
@@ -155,6 +179,16 @@ export const deleteCommentController = async (req, res) => {
       "Invalid task or comment ID",
       [],
     );
+  }
+
+  const comment = await getCommentById(taskId, commentId);
+
+  if (!comment) {
+    return sendError(res, 404, "NOT_FOUND", "Comment not found");
+  }
+
+  if (!canManageComment(req, comment)) {
+    return sendCommentForbidden(res);
   }
 
   const deletedComment = await deleteComment(taskId, commentId);

@@ -33,6 +33,14 @@ export async function getProjectById(projectId) {
     });
 }
 
+export async function countOwnedProjects(userId) {
+    return await prisma.projects.count({
+        where: {
+            owner_id: userId
+        }
+    });
+}
+
 export async function updateProject(projectId, projectData) {
     const { title, description } = projectData;
 

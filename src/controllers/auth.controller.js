@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { createAuthUser } from "../data/users.data.js";
+import { createAuthUser, EmailTakenError } from "../data/users.data.js";
 import { signupSchema, loginSchema } from "../schemas/auth.schema.js";
 import { authenticateUser } from "../data/users.data.js";
 import { sendError, sendSuccess } from "../utils/response.js";
@@ -18,9 +18,17 @@ export const signupController = async (req, res) => {
         );
     }
 
-    const user = await createAuthUser(result.data);
+    try {
+        const user = await createAuthUser(result.data);
 
-    return sendSuccess(res, 201, user);
+        return sendSuccess(res, 201, user);
+    } catch (error) {
+        if (error instanceof EmailTakenError) {
+            return sendError(res, 409, "EMAIL_TAKEN", error.message);
+        }
+
+        throw error;
+    }
 };
 
 export const loginController = async (req, res) => {

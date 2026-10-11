@@ -5,24 +5,41 @@ function isRecordNotFound(error) {
     return error.code === "P2025";
 }
 
+function isUniqueConstraintError(error) {
+    return error.code === "P2002";
+}
+
+// Thrown instead of Prisma's P2002 so callers can answer 409 rather than 500.
+export class EmailTakenError extends Error {
+    constructor() {
+        super("An account with this email already exists");
+        this.name = "EmailTakenError";
+    }
+}
+
 export async function createAuthUser(userData) {
     const { name, email, password } = userData;
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    return await prisma.users.create({
-        data: {
-            name,
-            email,
-            password_hash: passwordHash
-        },
-        select: {
-            id: true,
-            name: true,
-            email: true,
-            created_at: true
-        }
-    });
+    try {
+        return await prisma.users.create({
+            data: {
+                name,
+                email,
+                password_hash: passwordHash
+            },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                created_at: true
+            }
+        });
+    } catch (error) {
+        if (isUniqueConstraintError(error)) throw new EmailTakenError();
+        throw error;
+    }
 }
 
 export async function authenticateUser(email, password) {
@@ -105,6 +122,7 @@ export async function updateUser(userId, userData) {
         });
     } catch (error) {
         if (isRecordNotFound(error)) return undefined;
+        if (isUniqueConstraintError(error)) throw new EmailTakenError();
         throw error;
     }
 } 
@@ -114,6 +132,12 @@ export async function deleteUser(userId) {
         return await prisma.users.delete({
             where: {
                 id: userId
+            },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                created_at: true
             }
         });
     } catch (error) {
