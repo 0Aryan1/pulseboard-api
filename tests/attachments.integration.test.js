@@ -121,6 +121,7 @@ describe("Attachments API integration", () => {
       expect(attachment.file_name).toBe("diagram.png");
       expect(attachment.task_id).toBe(taskId);
       expect(attachment.status).toBe("processing");
+      expect(attachment.uploaded_by).toBe(member.id);
       expect(await fs.readFile(attachment.file_url)).toEqual(PNG_CONTENT);
 
       expect(mockQueueAdd).toHaveBeenCalledWith("processUpload", {
@@ -361,8 +362,22 @@ describe("Attachments API integration", () => {
   });
 
   describe("DELETE /attachments/:attachmentId", () => {
-    test("rejects a Member and keeps the file", async () => {
-      const attachment = await uploadAttachment();
+    test("lets the uploader delete their attachment", async () => {
+      const attachment = await uploadAttachment(member);
+
+      const response = await api
+        .delete(`${attachmentsUrl()}/${attachment.id}`)
+        .set("Authorization", `Bearer ${member.token}`);
+
+      expect(response.statusCode).toBe(200);
+      expect(
+        await prisma.attachments.findUnique({ where: { id: attachment.id } }),
+      ).toBeNull();
+      expect(await fileExists(attachment.file_url)).toBe(false);
+    });
+
+    test("rejects a Member deleting someone else's upload and keeps the file", async () => {
+      const attachment = await uploadAttachment(owner);
 
       const response = await api
         .delete(`${attachmentsUrl()}/${attachment.id}`)
@@ -370,9 +385,27 @@ describe("Attachments API integration", () => {
 
       expect(response.statusCode).toBe(403);
       expect(response.body.error.code).toBe("FORBIDDEN");
+      expect(response.body.error.message).toBe(
+        "Only the uploader or an Admin can delete this attachment",
+      );
       expect(
         await prisma.attachments.findUnique({ where: { id: attachment.id } }),
       ).not.toBeNull();
+      expect(await fileExists(attachment.file_url)).toBe(true);
+    });
+
+    test("leaves attachments without a recorded uploader to Admins", async () => {
+      const attachment = await uploadAttachment(member);
+      await prisma.attachments.update({
+        where: { id: attachment.id },
+        data: { uploaded_by: null },
+      });
+
+      const response = await api
+        .delete(`${attachmentsUrl()}/${attachment.id}`)
+        .set("Authorization", `Bearer ${member.token}`);
+
+      expect(response.statusCode).toBe(403);
       expect(await fileExists(attachment.file_url)).toBe(true);
     });
 

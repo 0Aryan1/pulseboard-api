@@ -9,14 +9,16 @@ datasource db {
 }
 
 model attachments {
-  id         Int      @id @default(autoincrement())
-  file_name  String   @db.VarChar(255)
-  file_url   String
-  task_id    Int
-  created_at DateTime @default(now()) @db.Timestamp(6)
+  id          Int      @id @default(autoincrement())
+  file_name   String   @db.VarChar(255)
+  file_url    String
+  task_id     Int
+  created_at  DateTime @default(now()) @db.Timestamp(6)
   /// processing | ready | failed (migrations/011_add_status_to_attachments.sql)
-  status     String   @default("processing") @db.VarChar(20)
-  tasks      tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  status      String   @default("processing") @db.VarChar(20)
+  uploaded_by Int?
+  tasks       tasks    @relation(fields: [task_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users       users?   @relation(fields: [uploaded_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
 }
 
 model comments {
@@ -77,6 +79,7 @@ model users {
   email           String            @unique @db.VarChar(255)
   created_at      DateTime          @default(now()) @db.Timestamp(6)
   password_hash   String?           @db.VarChar(255)
+  attachments     attachments[]
   comments        comments[]
   project_members project_members[]
   projects        projects[]

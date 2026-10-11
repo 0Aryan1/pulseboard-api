@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useSelector } from "react-redux";
 import { Button } from "../../components/ui/Button.jsx";
 import { StatusBadge } from "../../components/ui/Badge.jsx";
 import { Avatar } from "../../components/ui/Avatar.jsx";
@@ -9,6 +10,8 @@ import { TaskFormModal } from "./TaskFormModal.jsx";
 import { CommentThread } from "../comments/CommentThread.jsx";
 import { AttachmentPanel } from "../attachments/AttachmentPanel.jsx";
 import { useToast } from "../../hooks/useToast.js";
+import { useProjectRole } from "../../hooks/useProjectRole.js";
+import { selectCurrentUserId } from "../auth/authSlice.js";
 import { TASK_STATUS_LIST } from "../../lib/constants.js";
 import { formatDateTime } from "../../lib/format.js";
 import {
@@ -29,6 +32,8 @@ function Section({ title, children }) {
 
 export function TaskDetailDrawer({ task, projectId, onClose }) {
   const toast = useToast();
+  const currentUserId = useSelector(selectCurrentUserId);
+  const { isAdmin } = useProjectRole(projectId);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -47,6 +52,10 @@ export function TaskDetailDrawer({ task, projectId, onClose }) {
   }, [task, onClose]);
 
   if (!task) return null;
+
+  // Mirrors the API: anyone can move a task, but only its creator or an
+  // Admin can edit its details or delete it.
+  const canManage = isAdmin || task.created_by === currentUserId;
 
   // updateTaskSchema requires title and status on every call, so a status
   // change resends the whole task rather than patching one field.
@@ -112,14 +121,16 @@ export function TaskDetailDrawer({ task, projectId, onClose }) {
             </button>
           </div>
 
-          <div className="mt-3 flex gap-2">
-            <Button size="sm" variant="secondary" onClick={() => setEditOpen(true)}>
-              Edit
-            </Button>
-            <Button size="sm" variant="danger" onClick={() => setConfirmOpen(true)}>
-              Delete
-            </Button>
-          </div>
+          {canManage && (
+            <div className="mt-3 flex gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setEditOpen(true)}>
+                Edit
+              </Button>
+              <Button size="sm" variant="danger" onClick={() => setConfirmOpen(true)}>
+                Delete
+              </Button>
+            </div>
+          )}
         </header>
 
         <Section title="Status">
