@@ -157,7 +157,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }) {
         </Section>
 
         <Section title="Comments">
-          <CommentThread taskId={task.id} />
+          <CommentThread taskId={task.id} projectId={projectId} />
         </Section>
       </aside>
 

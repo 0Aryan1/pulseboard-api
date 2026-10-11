@@ -1,10 +1,8 @@
 import { useState } from "react";
-import { useSelector } from "react-redux";
 import { Modal, ModalActions } from "../../components/ui/Modal.jsx";
 import { Button } from "../../components/ui/Button.jsx";
 import { Input, Select, Textarea } from "../../components/ui/Field.jsx";
 import { useToast } from "../../hooks/useToast.js";
-import { selectCurrentUserId } from "../auth/authSlice.js";
 import { TASK_STATUS, TASK_STATUS_LIST } from "../../lib/constants.js";
 import {
   useCreateTaskMutation,
@@ -17,7 +15,6 @@ import {
  */
 function TaskForm({ projectId, task, defaultStatus, onClose }) {
   const toast = useToast();
-  const userId = useSelector(selectCurrentUserId);
   const isEdit = Boolean(task);
 
   const [createTask, { isLoading: isCreating }] = useCreateTaskMutation();
@@ -40,8 +37,7 @@ function TaskForm({ projectId, task, defaultStatus, onClose }) {
         await updateTask({ projectId, taskId: task.id, ...form }).unwrap();
         toast.success("Task updated.");
       } else {
-        // createTaskSchema requires userId; the server uses the JWT for the author.
-        await createTask({ projectId, ...form, userId }).unwrap();
+        await createTask({ projectId, ...form }).unwrap();
         toast.success("Task created.");
       }
 

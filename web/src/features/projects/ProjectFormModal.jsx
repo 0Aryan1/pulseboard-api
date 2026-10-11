@@ -1,10 +1,8 @@
 import { useState } from "react";
-import { useSelector } from "react-redux";
 import { Modal, ModalActions } from "../../components/ui/Modal.jsx";
 import { Button } from "../../components/ui/Button.jsx";
 import { Input, Textarea } from "../../components/ui/Field.jsx";
 import { useToast } from "../../hooks/useToast.js";
-import { selectCurrentUserId } from "../auth/authSlice.js";
 import {
   useCreateProjectMutation,
   useUpdateProjectMutation,
@@ -16,7 +14,6 @@ import {
  */
 function ProjectForm({ project, onClose }) {
   const toast = useToast();
-  const userId = useSelector(selectCurrentUserId);
   const isEdit = Boolean(project);
 
   const [createProject, { isLoading: isCreating }] = useCreateProjectMutation();
@@ -38,9 +35,7 @@ function ProjectForm({ project, onClose }) {
         await updateProject({ projectId: project.id, ...form }).unwrap();
         toast.success("Project updated.");
       } else {
-        // createProjectSchema requires userId even though the server takes the
-        // owner from the JWT.
-        await createProject({ ...form, userId }).unwrap();
+        await createProject(form).unwrap();
         toast.success("Project created. You were added as Admin.");
       }
 

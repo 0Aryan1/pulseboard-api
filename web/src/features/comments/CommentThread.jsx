@@ -6,6 +6,7 @@ import { Textarea } from "../../components/ui/Field.jsx";
 import { Spinner } from "../../components/ui/Spinner.jsx";
 import { ConfirmDialog } from "../../components/ui/Modal.jsx";
 import { useToast } from "../../hooks/useToast.js";
+import { useProjectRole } from "../../hooks/useProjectRole.js";
 import { selectCurrentUserId } from "../auth/authSlice.js";
 import { formatRelative } from "../../lib/format.js";
 import {
@@ -118,9 +119,10 @@ function CommentRow({ comment, taskId, canManage }) {
   );
 }
 
-export function CommentThread({ taskId }) {
+export function CommentThread({ taskId, projectId }) {
   const toast = useToast();
   const currentUserId = useSelector(selectCurrentUserId);
+  const { isAdmin } = useProjectRole(projectId);
   const { data: comments, isLoading } = useGetCommentsQuery(taskId);
   const [createComment, { isLoading: isPosting }] = useCreateCommentMutation();
   const [draft, setDraft] = useState("");
@@ -133,8 +135,6 @@ export function CommentThread({ taskId }) {
       await createComment({
         taskId,
         content: draft.trim(),
-        // createCommentSchema requires userId; the author comes from the JWT.
-        userId: currentUserId,
       }).unwrap();
       setDraft("");
     } catch (error) {
@@ -155,9 +155,8 @@ export function CommentThread({ taskId }) {
               key={comment.id}
               comment={comment}
               taskId={taskId}
-              // The API lets any project member edit any comment; the UI limits
-              // the controls to the author. See future_scope.md item 1.
-              canManage={comment.created_by === currentUserId}
+              // Mirrors the API: authors manage their own comments, Admins any.
+              canManage={isAdmin || comment.created_by === currentUserId}
             />
           ))}
         </div>

@@ -25,8 +25,6 @@ export const projectsApi = api.injectEndpoints({
       ],
     }),
 
-    // The server takes the owner from the JWT; `userId` is still required by
-    // createProjectSchema, so send the caller's own id to satisfy validation.
     createProject: builder.mutation({
       query: (body) => ({
         url: "/projects",
