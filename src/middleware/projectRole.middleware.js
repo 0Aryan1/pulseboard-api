@@ -6,6 +6,16 @@ export const projectRoleMiddleware = (requiredRoles) => {
         const userId = req.user.id;
         const projectId = Number(req.params.projectId);
 
+        if (!Number.isInteger(projectId) || projectId <= 0) {
+            return sendError(
+                res,
+                400,
+                "VALIDATION_ERROR",
+                "Invalid project ID",
+                []
+            );
+        }
+
         const membership = await prisma.project_members.findUnique({
             where: {
                 user_id_project_id: {

@@ -26,7 +26,10 @@ const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: Number(process.env.RATE_LIMIT_MAX) || 100,
     standardHeaders: "draft-8",
-    legacyHeaders: false
+    legacyHeaders: false,
+    // Answer in the API's usual error format instead of the plain-text default.
+    handler: (req, res, next, options) =>
+        sendError(res, options.statusCode, "RATE_LIMITED", "Too many requests, please try again later.")
 });
 
 // Request Logging Middleware
@@ -70,6 +73,11 @@ app.use("/api/v1/tasks/:taskId/attachments", attachmentsRouter);
 // Error Handling Middleware
 app.use((err, req, res, next) => {
   console.error(err);
+
+  // express.json() rejects a body it cannot parse; that is the client's mistake.
+  if (err.type === "entity.parse.failed") {
+    return sendError(res, 400, "INVALID_JSON", "Request body contains invalid JSON");
+  }
 
   // Multer rejects oversized files with a MulterError; the fileFilter in
   // upload.middleware.js rejects disallowed mimetypes with a plain Error.

@@ -80,15 +80,9 @@ export const createProjectTaskController = async (req, res) => {
     );
   }
 
-  console.log("Creating task...");
-
   const task = await createProjectTasks(projectId, result.data, req.user.id);
 
-  console.log("Task created in database:", task);
-
   emitToProject(projectId, "taskCreated", task);
-
-  console.log("taskCreated event emitted");
 
   return sendSuccess(res, 201, task);
 };
@@ -127,7 +121,18 @@ export const updateProjectTaskController = async (req, res) => {
   const updatedTask = await updateProjectTasks(projectId, taskId, result.data);
 
   if (!updatedTask) {
-    return sendError(res, 404, "NOT_FOUND", "Task not found");
+    return sendError(
+      res,
+      404,
+      "NOT_FOUND",
+      "Task not found",
+      formatValidationErrors([
+        {
+          path: ["taskId"],
+          message: "Task with the specified ID does not exist",
+        },
+      ]),
+    );
   }
 
   emitToProject(projectId, "taskUpdated", updatedTask);

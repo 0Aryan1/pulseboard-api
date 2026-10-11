@@ -24,7 +24,6 @@ const worker = new Worker(
         const { attachmentId, filePath } = job.data;
 
         console.log("Processing upload job:", job.id);
-        console.log("Job data:", job.data);
 
         try {
             // The file must still be on disk to be processed at all.

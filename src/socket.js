@@ -93,11 +93,5 @@ export function emitToProject(projectId, event, data) {
 
     const room = `project:${projectId}`;
 
-    console.log("=================================");
-    console.log("Socket event:", event);
-    console.log("Room:", room);
-    console.log("Data:", data);
-    console.log("=================================");
-
     ioInstance.to(room).emit(event, data);
 }

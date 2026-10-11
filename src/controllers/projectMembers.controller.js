@@ -2,6 +2,7 @@ import { sendError, sendSuccess } from "../utils/response.js";
 import { formatValidationErrors } from "../utils/validation.js";
 import { getProjectMembers, addProjectMember, updateProjectMember, deleteProjectMember} from "../data/projectMembers.data.js";
 import { getProjectById } from "../data/projects.data.js";
+import { getUserById } from "../data/users.data.js";
 import { createProjectMemberSchema, updateProjectMemberSchema } from "../schemas/projectMember.schema.js";
 
 /*
@@ -67,6 +68,12 @@ export const addProjectMemberController = async (req, res) => {
             "OWNER_MUST_BE_ADMIN",
             "The project owner must be an Admin"
         );
+    }
+
+    const user = await getUserById(userId);
+
+    if (!user) {
+        return sendError(res, 404, "NOT_FOUND", "User not found");
     }
 
     const member = await addProjectMember(

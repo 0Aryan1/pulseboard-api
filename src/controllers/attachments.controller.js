@@ -5,6 +5,25 @@ import fs from "fs/promises";
 import { uploadQueue } from "../queue.js";
 import { emitToProject } from "../socket.js";
 
+function hasInvalidIds(taskId, attachmentId) {
+    return (
+        !Number.isInteger(taskId) ||
+        taskId <= 0 ||
+        !Number.isInteger(attachmentId) ||
+        attachmentId <= 0
+    );
+}
+
+function sendInvalidIds(res) {
+    return sendError(
+        res,
+        400,
+        "VALIDATION_ERROR",
+        "Invalid task or attachment ID",
+        []
+    );
+}
+
 export const createAttachmentController = async (req, res) => {
     const taskId = Number(req.params.taskId);
 
@@ -62,6 +81,10 @@ export const getAttachmentsByIdController = async (req, res) => {
     const taskId = Number(req.params.taskId);
     const attachmentId = Number(req.params.attachmentId);
 
+    if (hasInvalidIds(taskId, attachmentId)) {
+        return sendInvalidIds(res);
+    }
+
     const attachment = await getAttachmentById(taskId, attachmentId);
     if (!attachment) {
         return sendError(res, 404, "NOT_FOUND", "Attachment not found");
@@ -73,6 +96,10 @@ export const getAttachmentsByIdController = async (req, res) => {
 export const downloadAttachmentController = async (req, res) => {
     const taskId = Number(req.params.taskId);
     const attachmentId = Number(req.params.attachmentId);
+
+    if (hasInvalidIds(taskId, attachmentId)) {
+        return sendInvalidIds(res);
+    }
 
     const attachment = await getAttachmentById(taskId, attachmentId);
 
@@ -101,6 +128,10 @@ export const downloadAttachmentController = async (req, res) => {
 export const deleteAttachmentController = async (req, res) => {
     const taskId = Number(req.params.taskId);
     const attachmentId = Number(req.params.attachmentId);
+
+    if (hasInvalidIds(taskId, attachmentId)) {
+        return sendInvalidIds(res);
+    }
 
     const attachment = await getAttachmentById(taskId, attachmentId);
 

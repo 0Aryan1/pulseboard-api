@@ -4,9 +4,6 @@ export const userOwnershipMiddleware = async (req, res, next) => {
     const userId = req.user.id;
     const resourceId = Number(req.params.userId);
 
-    console.log("JWT user:", userId);
-    console.log("URL user:", resourceId);
-
     if (userId !== resourceId) {
         return sendError(
             res,

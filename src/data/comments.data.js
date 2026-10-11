@@ -15,10 +15,7 @@ function formatComment(comment) {
 export const getAllComments = async (taskId) => {
     const comments = await prisma.comments.findMany({
         where: {
-            task_id: taskId,
-            created_by: {
-                not: null
-            }
+            task_id: taskId
         },
         include: {
             users: {
@@ -41,10 +38,7 @@ export const getCommentById = async (taskId, commentId) => {
     const comment = await prisma.comments.findFirst({
         where: {
             task_id: taskId,
-            id: commentId,
-            created_by: {
-                not: null
-            }
+            id: commentId
         },
         include: {
             users: {

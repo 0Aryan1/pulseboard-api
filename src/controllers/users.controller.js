@@ -1,6 +1,7 @@
-import { getAllUsers, getUserById, updateUser, deleteUser } from "../data/users.data.js";
+import { getAllUsers, getUserById, updateUser, deleteUser, EmailTakenError } from "../data/users.data.js";
+import { countOwnedProjects } from "../data/projects.data.js";
 import { sendError, sendSuccess } from "../utils/response.js";
-import { createUserSchema, updateUserSchema} from "../schemas/user.schema.js";
+import { updateUserSchema } from "../schemas/user.schema.js";
 import { formatValidationErrors } from "../utils/validation.js";
 
 
@@ -11,10 +12,6 @@ export const getAllUsersController = async (req, res) => {
 
     const users = await getAllUsers(page, limit);
 
-    if(users == []) {
-        return sendError(res, 404, "NOT_FOUND", "No users found");
-    }   
-    
     return sendSuccess(res, 200, users);
 };
 
@@ -38,7 +35,17 @@ export const updateUserController = async (req, res) => {
         return sendError(res, 400, "VALIDATION_ERROR", "Invalid user data", formatValidationErrors(result.error.issues));
     }
 
-    const updatedUser = await updateUser(userId, result.data);
+    let updatedUser;
+
+    try {
+        updatedUser = await updateUser(userId, result.data);
+    } catch (error) {
+        if (error instanceof EmailTakenError) {
+            return sendError(res, 409, "EMAIL_TAKEN", error.message);
+        }
+
+        throw error;
+    }
 
     if (!updatedUser) {
         return sendError(res, 404, "NOT_FOUND", "User not found");
@@ -49,6 +56,17 @@ export const updateUserController = async (req, res) => {
 
 export const deleteUserController = async (req, res) => {
     const userId = Number(req.params.userId);
+
+    // projects.owner_id has no cascade, so the database would refuse the delete.
+    if (await countOwnedProjects(userId) > 0) {
+        return sendError(
+            res,
+            409,
+            "OWNER_HAS_PROJECTS",
+            "Transfer or delete the projects you own before deleting your account."
+        );
+    }
+
     const deletedUser = await deleteUser(userId);
 
     if (!deletedUser) {
