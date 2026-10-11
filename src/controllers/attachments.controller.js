@@ -44,7 +44,8 @@ export const createAttachmentController = async (req, res) => {
     const attachment = await createAttachment(
         taskId,
         req.file.originalname,
-        req.file.path
+        req.file.path,
+        req.user.id
     );
 
     try {
@@ -137,6 +138,16 @@ export const deleteAttachmentController = async (req, res) => {
 
     if (!attachment) {
         return sendError(res, 404, "NOT_FOUND", "Attachment not found");
+    }
+
+    // Uploaders manage their own files; Admins can remove any.
+    if (attachment.uploaded_by !== req.user.id && req.projectRole !== "Admin") {
+        return sendError(
+            res,
+            403,
+            "FORBIDDEN",
+            "Only the uploader or an Admin can delete this attachment"
+        );
     }
 
     const filePath = path.resolve(attachment.file_url);

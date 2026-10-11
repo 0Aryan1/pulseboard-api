@@ -43,6 +43,8 @@ export const projectRoleMiddleware = (requiredRoles) => {
             );
         }
 
+        req.projectRole = membership.role;
+
         next();
     };
 };

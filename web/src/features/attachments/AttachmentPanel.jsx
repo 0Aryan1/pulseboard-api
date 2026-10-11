@@ -4,9 +4,9 @@ import { Button } from "../../components/ui/Button.jsx";
 import { Spinner } from "../../components/ui/Spinner.jsx";
 import { Badge } from "../../components/ui/Badge.jsx";
 import { ConfirmDialog } from "../../components/ui/Modal.jsx";
-import { RoleGate } from "../../components/RoleGate.jsx";
 import { useToast } from "../../hooks/useToast.js";
-import { selectToken } from "../auth/authSlice.js";
+import { useProjectRole } from "../../hooks/useProjectRole.js";
+import { selectCurrentUserId, selectToken } from "../auth/authSlice.js";
 import { fetchAttachmentBlob, saveBlob } from "../../lib/download.js";
 import { API_BASE_URL } from "../../services/baseQuery.js";
 import {
@@ -25,6 +25,10 @@ import {
 function AttachmentRow({ attachment, taskId, projectId }) {
   const toast = useToast();
   const token = useSelector(selectToken);
+  const currentUserId = useSelector(selectCurrentUserId);
+  const { isAdmin } = useProjectRole(projectId);
+  // Mirrors the API: uploaders delete their own files, Admins any.
+  const canDelete = isAdmin || attachment.uploaded_by === currentUserId;
   const [isDownloading, setIsDownloading] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteAttachment, { isLoading: isDeleting }] = useDeleteAttachmentMutation();
@@ -90,8 +94,7 @@ function AttachmentRow({ attachment, taskId, projectId }) {
         </button>
       )}
 
-      {/* DELETE is Admin-only on the server. */}
-      <RoleGate projectId={projectId}>
+      {canDelete && (
         <button
           type="button"
           onClick={() => setConfirmOpen(true)}
@@ -99,7 +102,7 @@ function AttachmentRow({ attachment, taskId, projectId }) {
         >
           Delete
         </button>
-      </RoleGate>
+      )}
 
       <ConfirmDialog
         open={confirmOpen}

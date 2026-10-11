@@ -10,6 +10,34 @@ import {
 } from "../data/tasks.data.js";
 import { emitToProject } from "../socket.js";
 
+function sendTaskNotFound(res) {
+  return sendError(
+    res,
+    404,
+    "NOT_FOUND",
+    "Task not found",
+    formatValidationErrors([
+      {
+        path: ["taskId"],
+        message: "Task with the specified ID does not exist",
+      },
+    ]),
+  );
+}
+
+// Creators and Admins manage a task; other members may only move its status.
+function canManageTask(req, task) {
+  return task.created_by === req.user.id || req.projectRole === "Admin";
+}
+
+function changesTaskDetails(task, data) {
+  return (
+    data.title !== task.title ||
+    (data.description !== undefined &&
+      data.description !== (task.description ?? ""))
+  );
+}
+
 export const getProjectTasksController = async (req, res) => {
   const projectId = Number(req.params.projectId);
 
@@ -44,18 +72,7 @@ export const getProjectTasksByIdController = async (req, res) => {
   const tasks = await getProjectTasksById(projectId, taskId);
 
   if (!tasks) {
-    return sendError(
-      res,
-      404,
-      "NOT_FOUND",
-      "Task not found",
-      formatValidationErrors([
-        {
-          path: ["taskId"],
-          message: "Task with the specified ID does not exist",
-        },
-      ]),
-    );
+    return sendTaskNotFound(res);
   }
 
   return sendSuccess(res, 200, tasks);
@@ -118,21 +135,31 @@ export const updateProjectTaskController = async (req, res) => {
     );
   }
 
-  const updatedTask = await updateProjectTasks(projectId, taskId, result.data);
+  const task = await getProjectTasksById(projectId, taskId);
+
+  if (!task) {
+    return sendTaskNotFound(res);
+  }
+
+  let changes = result.data;
+
+  if (!canManageTask(req, task)) {
+    if (changesTaskDetails(task, result.data)) {
+      return sendError(
+        res,
+        403,
+        "FORBIDDEN",
+        "Only the task's creator or an Admin can edit its title or description",
+      );
+    }
+
+    changes = { status: result.data.status };
+  }
+
+  const updatedTask = await updateProjectTasks(projectId, taskId, changes);
 
   if (!updatedTask) {
-    return sendError(
-      res,
-      404,
-      "NOT_FOUND",
-      "Task not found",
-      formatValidationErrors([
-        {
-          path: ["taskId"],
-          message: "Task with the specified ID does not exist",
-        },
-      ]),
-    );
+    return sendTaskNotFound(res);
   }
 
   emitToProject(projectId, "taskUpdated", updatedTask);
@@ -159,21 +186,25 @@ export const deleteProjectTaskController = async (req, res) => {
     );
   }
 
+  const task = await getProjectTasksById(projectId, taskId);
+
+  if (!task) {
+    return sendTaskNotFound(res);
+  }
+
+  if (!canManageTask(req, task)) {
+    return sendError(
+      res,
+      403,
+      "FORBIDDEN",
+      "Only the task's creator or an Admin can delete it",
+    );
+  }
+
   const deletedTask = await deleteProjectTasks(projectId, taskId);
 
   if (!deletedTask) {
-    return sendError(
-      res,
-      404,
-      "NOT_FOUND",
-      "Task not found",
-      formatValidationErrors([
-        {
-          path: ["taskId"],
-          message: "Task with the specified ID does not exist",
-        },
-      ]),
-    );
+    return sendTaskNotFound(res);
   }
 
   emitToProject(projectId, "taskDeleted", deletedTask);

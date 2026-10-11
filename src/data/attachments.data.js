@@ -11,12 +11,13 @@ export const ATTACHMENT_STATUS = {
     FAILED: "failed"
 };
 
-export async function createAttachment(taskId, fileName, fileUrl) {
+export async function createAttachment(taskId, fileName, fileUrl, uploadedBy) {
     return await prisma.attachments.create({
         data: {
             file_name: fileName,
             file_url: fileUrl,
             task_id: taskId,
+            uploaded_by: uploadedBy,
             // Stays 'processing' until src/worker.js finishes with the file.
             status: ATTACHMENT_STATUS.PROCESSING
         }

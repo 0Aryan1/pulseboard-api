@@ -12,7 +12,7 @@ router.post("/", authMiddleware,taskAccessMiddleware(["Admin", "Member"]), uploa
 router.get("/", authMiddleware,taskAccessMiddleware(["Admin", "Member"]), getAttachmentsController);
 router.get("/:attachmentId", authMiddleware,taskAccessMiddleware(["Admin", "Member"]), getAttachmentsByIdController);
 router.get("/:attachmentId/download", authMiddleware,taskAccessMiddleware(["Admin", "Member"]), downloadAttachmentController);
-router.delete("/:attachmentId", authMiddleware,taskAccessMiddleware(["Admin"]), deleteAttachmentController);
+router.delete("/:attachmentId", authMiddleware,taskAccessMiddleware(["Admin", "Member"]), deleteAttachmentController);
 
 export default router;
 
