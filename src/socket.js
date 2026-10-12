@@ -104,6 +104,22 @@ export function removeUserFromProject(projectId, userId) {
     ioInstance.to(`user:${userId}`).emit("removedFromProject", { projectId });
 }
 
+/**
+ * Announces a deleted project to everyone viewing it, then empties its room so
+ * no socket lingers in a room that no longer has a project behind it.
+ */
+export function closeProjectRoom(projectId, deletedBy) {
+    if (!ioInstance) {
+        console.error("Socket.io is not initialized");
+        return;
+    }
+
+    const room = `project:${projectId}`;
+
+    ioInstance.to(room).emit("projectDeleted", { projectId, deletedBy });
+    ioInstance.in(room).socketsLeave(room);
+}
+
 export function emitToProject(projectId, event, data) {
     if (!ioInstance) {
         console.error("Socket.io is not initialized");
