@@ -39,6 +39,24 @@ export async function getProjectMembers(projectId) {
   return members.map(formatProjectMember);
 }
 
+export async function getProjectMemberIds(projectId) {
+  const members = await prisma.project_members.findMany({
+    where: { project_id: projectId },
+    select: { user_id: true },
+  });
+
+  return members.map((member) => member.user_id);
+}
+
+export async function getUserProjectIds(userId) {
+  const memberships = await prisma.project_members.findMany({
+    where: { user_id: userId },
+    select: { project_id: true },
+  });
+
+  return memberships.map((membership) => membership.project_id);
+}
+
 export async function addProjectMember(projectId, userId, role) {
   try {
     return await prisma.project_members.create({
