@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 jest.unstable_mockModule("../src/socket.js", () => ({
   emitToProject: jest.fn(),
+  removeUserFromProject: jest.fn(),
 }));
 
 const { default: request } = await import("supertest");

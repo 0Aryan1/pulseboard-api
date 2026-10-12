@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
 import { selectToken } from "../features/auth/authSlice.js";
 import { logRequest } from "../features/devtools/devLogSlice.js";
 import { api } from "../services/api.js";
 import { getSocket } from "../services/socket.js";
+import { useToast } from "./useToast.js";
 
 const taskTags = (projectId) => (task) =>
   // Task payloads carry project_id, so ignore anything for another project.
@@ -26,6 +28,13 @@ const attachmentTags = (attachment) =>
     ? [{ type: "Attachment", id: `TASK-${attachment.task_id}` }]
     : [];
 
+// Member payloads are project_members rows, which carry project_id. Refetching
+// the member list also refreshes the caller's own role (useProjectRole).
+const memberTags = (projectId) => (member) =>
+  Number(member?.project_id) === projectId
+    ? [{ type: "Member", id: `PROJECT-${projectId}` }]
+    : [];
+
 /**
  * Server events (src/controllers/*.controller.js) mapped to the RTK Query
  * cache tags they make stale. Payloads are raw rows without the author's
@@ -46,6 +55,9 @@ const eventTags = (projectId) => ({
   // Processing outcomes from the upload worker, relayed by src/uploadEvents.js.
   attachmentReady: attachmentTags,
   attachmentFailed: attachmentTags,
+  memberAdded: memberTags(projectId),
+  memberUpdated: memberTags(projectId),
+  memberRemoved: memberTags(projectId),
 });
 
 /**
@@ -55,6 +67,10 @@ const eventTags = (projectId) => ({
 export function useProjectSocket(projectId) {
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
+  const navigate = useNavigate();
+  // Only the memoised callback goes in the effect's deps: useToast returns a
+  // new object every render, which would rejoin the room on each render.
+  const { error: showError } = useToast();
 
   useEffect(() => {
     if (!token || !projectId) return undefined;
@@ -89,11 +105,23 @@ export function useProjectSocket(projectId) {
       },
     ]);
 
+    // The server has already taken this tab out of the room; leave the page
+    // too, since every request for this project now answers 403.
+    const onRemovedFromProject = (payload) => {
+      if (Number(payload?.projectId) !== projectId) return;
+
+      log("removedFromProject", payload, false);
+      dispatch(api.util.invalidateTags([{ type: "Project", id: "LIST" }]));
+      showError("You were removed from this project.");
+      navigate("/projects", { replace: true });
+    };
+
     const onProjectError = (message) => log("projectError", message, false);
     const onConnectError = (error) => log("connect_error", error.message, false);
 
     socket.on("connect", onConnect);
     handlers.forEach(([event, handler]) => socket.on(event, handler));
+    socket.on("removedFromProject", onRemovedFromProject);
     socket.on("projectError", onProjectError);
     socket.on("connect_error", onConnectError);
 
@@ -107,8 +135,9 @@ export function useProjectSocket(projectId) {
       socket.emit("leaveProject", projectId);
       socket.off("connect", onConnect);
       handlers.forEach(([event, handler]) => socket.off(event, handler));
+      socket.off("removedFromProject", onRemovedFromProject);
       socket.off("projectError", onProjectError);
       socket.off("connect_error", onConnectError);
     };
-  }, [dispatch, token, projectId]);
+  }, [dispatch, token, projectId, navigate, showError]);
 }

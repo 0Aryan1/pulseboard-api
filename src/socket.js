@@ -29,6 +29,10 @@ export function setupSocket(io) {
     io.on("connection", (socket) => {
         console.log("Socket connected:", socket.id);
 
+        // Lets the server reach all of a user's tabs, e.g. to remove them
+        // from a project they no longer belong to.
+        socket.join(`user:${socket.user.id}`);
+
         socket.on("joinProject", async (projectId) => {
             const numericProjectId = Number(projectId);
 
@@ -83,6 +87,21 @@ export function setupSocket(io) {
             );
         });
     });
+}
+
+/**
+ * Membership is only checked when a socket joins a project room, so a removed
+ * member's open tabs must be taken out of the room explicitly; otherwise they
+ * keep receiving the project's events.
+ */
+export function removeUserFromProject(projectId, userId) {
+    if (!ioInstance) {
+        console.error("Socket.io is not initialized");
+        return;
+    }
+
+    ioInstance.in(`user:${userId}`).socketsLeave(`project:${projectId}`);
+    ioInstance.to(`user:${userId}`).emit("removedFromProject", { projectId });
 }
 
 export function emitToProject(projectId, event, data) {
