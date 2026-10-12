@@ -6,6 +6,7 @@ const mockEmitToProject = jest.fn();
 jest.unstable_mockModule("../src/socket.js", () => ({
   emitToProject: mockEmitToProject,
   removeUserFromProject: jest.fn(),
+  closeProjectRoom: jest.fn(),
 }));
 
 const { default: request } = await import("supertest");

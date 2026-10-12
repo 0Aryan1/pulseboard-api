@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { selectToken } from "../features/auth/authSlice.js";
+import { selectCurrentUserId, selectToken } from "../features/auth/authSlice.js";
 import { logRequest } from "../features/devtools/devLogSlice.js";
 import { api } from "../services/api.js";
 import { getSocket } from "../services/socket.js";
@@ -35,6 +35,15 @@ const memberTags = (projectId) => (member) =>
     ? [{ type: "Member", id: `PROJECT-${projectId}` }]
     : [];
 
+// Rename and ownership transfer send the full project row.
+const projectTags = (projectId) => (project) =>
+  Number(project?.id) === projectId
+    ? [
+        { type: "Project", id: projectId },
+        { type: "Project", id: "LIST" },
+      ]
+    : [];
+
 /**
  * Server events (src/controllers/*.controller.js) mapped to the RTK Query
  * cache tags they make stale. Payloads are raw rows without the author's
@@ -58,6 +67,7 @@ const eventTags = (projectId) => ({
   memberAdded: memberTags(projectId),
   memberUpdated: memberTags(projectId),
   memberRemoved: memberTags(projectId),
+  projectUpdated: projectTags(projectId),
 });
 
 /**
@@ -67,6 +77,7 @@ const eventTags = (projectId) => ({
 export function useProjectSocket(projectId) {
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
+  const currentUserId = useSelector(selectCurrentUserId);
   const navigate = useNavigate();
   // Only the memoised callback goes in the effect's deps: useToast returns a
   // new object every render, which would rejoin the room on each render.
@@ -116,12 +127,28 @@ export function useProjectSocket(projectId) {
       navigate("/projects", { replace: true });
     };
 
+    // The server empties the room after this event. Whoever deleted the
+    // project already saw a success toast, so only tell everyone else.
+    const onProjectDeleted = (payload) => {
+      if (Number(payload?.projectId) !== projectId) return;
+
+      log("projectDeleted", payload);
+      dispatch(api.util.invalidateTags([{ type: "Project", id: "LIST" }]));
+
+      if (payload.deletedBy !== currentUserId) {
+        showError("This project was deleted.");
+      }
+
+      navigate("/projects", { replace: true });
+    };
+
     const onProjectError = (message) => log("projectError", message, false);
     const onConnectError = (error) => log("connect_error", error.message, false);
 
     socket.on("connect", onConnect);
     handlers.forEach(([event, handler]) => socket.on(event, handler));
     socket.on("removedFromProject", onRemovedFromProject);
+    socket.on("projectDeleted", onProjectDeleted);
     socket.on("projectError", onProjectError);
     socket.on("connect_error", onConnectError);
 
@@ -136,8 +163,9 @@ export function useProjectSocket(projectId) {
       socket.off("connect", onConnect);
       handlers.forEach(([event, handler]) => socket.off(event, handler));
       socket.off("removedFromProject", onRemovedFromProject);
+      socket.off("projectDeleted", onProjectDeleted);
       socket.off("projectError", onProjectError);
       socket.off("connect_error", onConnectError);
     };
-  }, [dispatch, token, projectId, navigate, showError]);
+  }, [dispatch, token, projectId, currentUserId, navigate, showError]);
 }

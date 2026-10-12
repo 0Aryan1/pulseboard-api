@@ -2,6 +2,7 @@ import {getAllProjectsData, getProjectById, createProject, updateProject, delete
 import { sendError, sendSuccess } from "../utils/response.js";
 import { createProjectSchema, updateProjectSchema, transferOwnershipSchema } from "../schemas/project.schema.js";
 import { formatValidationErrors } from "../utils/validation.js";
+import { closeProjectRoom, emitToProject } from "../socket.js";
 
 export const getAllProjectsController = async (req, res) => {
     const page = Number(req.query.page) || 1;
@@ -50,6 +51,8 @@ export const updateProjectController = async (req,res) => {
     const updatedProject = await updateProject(projectId, result.data);
 
     if (!updatedProject) return sendError(res, 404, "NOT_FOUND", "Project not found");
+
+    emitToProject(projectId, "projectUpdated", updatedProject);
 
     return sendSuccess(res, 200, updatedProject);
 }
@@ -109,6 +112,14 @@ export const transferProjectOwnershipController = async (req, res) => {
         );
     }
 
+    emitToProject(projectId, "projectUpdated", updatedProject);
+    // The new owner was promoted to Admin in the same transaction.
+    emitToProject(projectId, "memberUpdated", {
+        project_id: projectId,
+        user_id: result.data.userId,
+        role: "Admin"
+    });
+
     return sendSuccess(res, 200, updatedProject);
 };
 
@@ -118,6 +129,8 @@ export const deleteProjectController = async (req, res) => {
     const deletedProject = await deleteProject(projectId);
 
     if (!deletedProject) return sendError(res, 404, "NOT_FOUND", "Project not found");
+
+    closeProjectRoom(projectId, req.user.id);
 
     return sendSuccess(res, 200, deletedProject);
 };
