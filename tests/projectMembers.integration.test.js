@@ -3,6 +3,7 @@ import { createTestUser, deleteTestUsers } from "./helpers/testUsers.js";
 
 jest.unstable_mockModule("../src/socket.js", () => ({
   emitToProject: jest.fn(),
+  removeUserFromProject: jest.fn(),
 }));
 
 const { default: request } = await import("supertest");

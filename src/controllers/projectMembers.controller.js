@@ -4,6 +4,7 @@ import { getProjectMembers, addProjectMember, updateProjectMember, deleteProject
 import { getProjectById } from "../data/projects.data.js";
 import { getUserById } from "../data/users.data.js";
 import { createProjectMemberSchema, updateProjectMemberSchema } from "../schemas/projectMember.schema.js";
+import { emitToProject, removeUserFromProject } from "../socket.js";
 
 /*
  * The project owner must always hold the Admin role. createProject seeds them
@@ -91,6 +92,8 @@ export const addProjectMemberController = async (req, res) => {
     );
 }
 
+    emitToProject(projectId, "memberAdded", member);
+
     return sendSuccess(res, 201, member);
 };
 
@@ -150,6 +153,8 @@ export const updateProjectMemberController = async (req, res) => {
         return sendError(res, 404, "NOT_FOUND", "Project member not found");
     }
 
+    emitToProject(projectId, "memberUpdated", updatedMember);
+
     return sendSuccess(res, 200, updatedMember);
 };
 
@@ -195,6 +200,9 @@ export const deleteProjectMemberController = async (req, res) => {
     if (!deletedMember) {
         return sendError(res, 404, "NOT_FOUND", "Project member not found");
     }
+
+    emitToProject(projectId, "memberRemoved", deletedMember);
+    removeUserFromProject(projectId, userId);
 
     return sendSuccess(res, 200, deletedMember);
 };
