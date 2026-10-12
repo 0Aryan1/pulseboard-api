@@ -9,6 +9,11 @@ jest.unstable_mockModule("../src/socket.js", () => ({
   emitToProject: mockEmitToProject,
   removeUserFromProject: jest.fn(),
   closeProjectRoom: jest.fn(),
+  emitToUser: jest.fn(),
+  emitToProjectAndMembers: jest.fn(),
+  emitToProjects: jest.fn(),
+  emitToUserAndProjects: jest.fn(),
+  disconnectUser: jest.fn(),
 }));
 
 // No worker runs during tests, so jobs are captured instead of sent to Redis.

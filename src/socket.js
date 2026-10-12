@@ -89,44 +89,74 @@ export function setupSocket(io) {
     });
 }
 
+function getIo() {
+    if (!ioInstance) {
+        console.error("Socket.io is not initialized");
+    }
+
+    return ioInstance;
+}
+
+const projectRoom = (projectId) => `project:${projectId}`;
+const userRoom = (userId) => `user:${userId}`;
+
+// One emit to several rooms reaches each socket once, even if it is in more
+// than one of them (e.g. a project page is in both its project and user room).
+function emitToRooms(rooms, event, data) {
+    getIo()?.to(rooms).emit(event, data);
+}
+
+export function emitToProject(projectId, event, data) {
+    emitToRooms([projectRoom(projectId)], event, data);
+}
+
+export function emitToUser(userId, event, data) {
+    emitToRooms([userRoom(userId)], event, data);
+}
+
+// For changes that also show outside the project page, e.g. on the projects list.
+export function emitToProjectAndMembers(projectId, memberIds, event, data) {
+    emitToRooms([projectRoom(projectId), ...memberIds.map(userRoom)], event, data);
+}
+
+// For changes to a user that their teammates and their own other tabs show.
+export function emitToUserAndProjects(userId, projectIds, event, data) {
+    emitToRooms([userRoom(userId), ...projectIds.map(projectRoom)], event, data);
+}
+
+export function emitToProjects(projectIds, event, data) {
+    if (projectIds.length === 0) return;
+
+    emitToRooms(projectIds.map(projectRoom), event, data);
+}
+
 /**
  * Membership is only checked when a socket joins a project room, so a removed
  * member's open tabs must be taken out of the room explicitly; otherwise they
  * keep receiving the project's events.
  */
 export function removeUserFromProject(projectId, userId) {
-    if (!ioInstance) {
-        console.error("Socket.io is not initialized");
-        return;
-    }
+    const io = getIo();
+    if (!io) return;
 
-    ioInstance.in(`user:${userId}`).socketsLeave(`project:${projectId}`);
-    ioInstance.to(`user:${userId}`).emit("removedFromProject", { projectId });
+    io.in(userRoom(userId)).socketsLeave(projectRoom(projectId));
+    io.to(userRoom(userId)).emit("removedFromProject", { projectId });
 }
 
 /**
- * Announces a deleted project to everyone viewing it, then empties its room so
- * no socket lingers in a room that no longer has a project behind it.
+ * Announces a deleted project to everyone viewing it and to its members'
+ * other tabs, then empties its room so no socket lingers in a room that no
+ * longer has a project behind it.
  */
-export function closeProjectRoom(projectId, deletedBy) {
-    if (!ioInstance) {
-        console.error("Socket.io is not initialized");
-        return;
-    }
+export function closeProjectRoom(projectId, deletedBy, memberIds = []) {
+    const io = getIo();
+    if (!io) return;
 
-    const room = `project:${projectId}`;
-
-    ioInstance.to(room).emit("projectDeleted", { projectId, deletedBy });
-    ioInstance.in(room).socketsLeave(room);
+    emitToProjectAndMembers(projectId, memberIds, "projectDeleted", { projectId, deletedBy });
+    io.in(projectRoom(projectId)).socketsLeave(projectRoom(projectId));
 }
 
-export function emitToProject(projectId, event, data) {
-    if (!ioInstance) {
-        console.error("Socket.io is not initialized");
-        return;
-    }
-
-    const room = `project:${projectId}`;
-
-    ioInstance.to(room).emit(event, data);
+// A deleted account should not stay connected through an old token.
+export function disconnectUser(userId) {
+    getIo()?.in(userRoom(userId)).disconnectSockets(true);
 }

@@ -4,7 +4,7 @@ import { getProjectMembers, addProjectMember, updateProjectMember, deleteProject
 import { getProjectById } from "../data/projects.data.js";
 import { getUserById } from "../data/users.data.js";
 import { createProjectMemberSchema, updateProjectMemberSchema } from "../schemas/projectMember.schema.js";
-import { emitToProject, removeUserFromProject } from "../socket.js";
+import { emitToProject, emitToUser, removeUserFromProject } from "../socket.js";
 
 /*
  * The project owner must always hold the Admin role. createProject seeds them
@@ -93,6 +93,8 @@ export const addProjectMemberController = async (req, res) => {
 }
 
     emitToProject(projectId, "memberAdded", member);
+    // Reaches the new member wherever they are, so their projects list updates.
+    emitToUser(userId, "addedToProject", { projectId, title: project.title, role });
 
     return sendSuccess(res, 201, member);
 };

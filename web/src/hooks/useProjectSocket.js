@@ -35,14 +35,18 @@ const memberTags = (projectId) => (member) =>
     ? [{ type: "Member", id: `PROJECT-${projectId}` }]
     : [];
 
-// Rename and ownership transfer send the full project row.
+// Rename and ownership transfer send the full project row. The projects list
+// is refreshed by useUserSocket, which hears these on every page.
 const projectTags = (projectId) => (project) =>
-  Number(project?.id) === projectId
-    ? [
-        { type: "Project", id: projectId },
-        { type: "Project", id: "LIST" },
-      ]
-    : [];
+  Number(project?.id) === projectId ? [{ type: "Project", id: projectId }] : [];
+
+// A teammate renamed or deleted their account: refresh everything that shows
+// author names (members, the task board, and the open task's comments).
+const userTags = (projectId) => () => [
+  { type: "Member", id: `PROJECT-${projectId}` },
+  { type: "Task", id: `PROJECT-${projectId}` },
+  { type: "Comment" },
+];
 
 /**
  * Server events (src/controllers/*.controller.js) mapped to the RTK Query
@@ -68,6 +72,8 @@ const eventTags = (projectId) => ({
   memberUpdated: memberTags(projectId),
   memberRemoved: memberTags(projectId),
   projectUpdated: projectTags(projectId),
+  userUpdated: userTags(projectId),
+  userDeleted: userTags(projectId),
 });
 
 /**
@@ -122,7 +128,6 @@ export function useProjectSocket(projectId) {
       if (Number(payload?.projectId) !== projectId) return;
 
       log("removedFromProject", payload, false);
-      dispatch(api.util.invalidateTags([{ type: "Project", id: "LIST" }]));
       showError("You were removed from this project.");
       navigate("/projects", { replace: true });
     };
@@ -133,7 +138,6 @@ export function useProjectSocket(projectId) {
       if (Number(payload?.projectId) !== projectId) return;
 
       log("projectDeleted", payload);
-      dispatch(api.util.invalidateTags([{ type: "Project", id: "LIST" }]));
 
       if (payload.deletedBy !== currentUserId) {
         showError("This project was deleted.");

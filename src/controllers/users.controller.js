@@ -1,5 +1,7 @@
 import { getAllUsers, getUserById, updateUser, deleteUser, EmailTakenError } from "../data/users.data.js";
 import { countOwnedProjects } from "../data/projects.data.js";
+import { getUserProjectIds } from "../data/projectMembers.data.js";
+import { disconnectUser, emitToProjects, emitToUserAndProjects } from "../socket.js";
 import { sendError, sendSuccess } from "../utils/response.js";
 import { updateUserSchema } from "../schemas/user.schema.js";
 import { formatValidationErrors } from "../utils/validation.js";
@@ -51,6 +53,10 @@ export const updateUserController = async (req, res) => {
         return sendError(res, 404, "NOT_FOUND", "User not found");
     }
 
+    // Teammates see the new name; the user's other tabs refresh their profile.
+    const projectIds = await getUserProjectIds(userId);
+    emitToUserAndProjects(userId, projectIds, "userUpdated", updatedUser);
+
     return sendSuccess(res, 200, updatedUser);
 };
 
@@ -67,11 +73,17 @@ export const deleteUserController = async (req, res) => {
         );
     }
 
+    // Read before deleting: the delete cascades to the memberships.
+    const projectIds = await getUserProjectIds(userId);
+
     const deletedUser = await deleteUser(userId);
 
     if (!deletedUser) {
         return sendError(res, 404, "NOT_FOUND", "User not found");
     }
+
+    emitToProjects(projectIds, "userDeleted", { id: userId });
+    disconnectUser(userId);
 
     return sendSuccess(res, 200, deletedUser);
 };
