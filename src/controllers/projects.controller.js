@@ -180,6 +180,7 @@ export const deleteProjectController = async (req, res) => {
     await invalidateProjectListCache(memberIds);
     await redis.del(projectCacheKey(projectId));
     await redis.del(`members:project:${projectId}`);
+    await redis.del(`tasks:project:${projectId}`);
 
     closeProjectRoom(projectId, req.user.id, memberIds);
 
