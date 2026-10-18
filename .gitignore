@@ -38,3 +38,5 @@ uploads/
 
 # Local database dumps (contain real data)
 /pulseboard_*.sql
+
+posts/

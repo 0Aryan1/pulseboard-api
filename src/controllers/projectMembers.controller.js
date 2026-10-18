@@ -5,6 +5,8 @@ import { getProjectById } from "../data/projects.data.js";
 import { getUserById } from "../data/users.data.js";
 import { createProjectMemberSchema, updateProjectMemberSchema } from "../schemas/projectMember.schema.js";
 import { emitToProject, emitToUser, removeUserFromProject } from "../socket.js";
+import redis from "../redis.js";
+import { projectCacheKey, invalidateProjectListCache } from "./projects.controller.js";
 
 /*
  * The project owner must always hold the Admin role. createProject seeds them
@@ -17,11 +19,36 @@ import { emitToProject, emitToUser, removeUserFromProject } from "../socket.js";
  */
 const OWNER_ROLE = "Admin";
 
+function membersCacheKey(projectId) {
+    return `members:project:${projectId}`;
+}
+
+async function getCachedProject(projectId) {
+    const cacheKey = projectCacheKey(projectId);
+    const cached = await redis.get(cacheKey);
+
+    if (cached) return JSON.parse(cached);
+
+    const project = await getProjectById(projectId);
+    if (project) {
+        await redis.set(cacheKey, JSON.stringify(project), "EX", 120);
+    }
+    return project;
+}
 
 export const getProjectMembersController = async (req, res) => {
     const projectId = Number(req.params.projectId);
 
+    const cacheKey = membersCacheKey(projectId);
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+        return sendSuccess(res, 200, JSON.parse(cached));
+    }
+
     const members = await getProjectMembers(projectId);
+
+    await redis.set(cacheKey, JSON.stringify(members), "EX", 120);
 
     return sendSuccess(res, 200, members);
 };
@@ -56,7 +83,7 @@ export const addProjectMemberController = async (req, res) => {
     );
 }
 
-    const project = await getProjectById(projectId);
+    const project = await getCachedProject(projectId);
 
     if (!project) {
         return sendError(res, 404, "NOT_FOUND", "Project not found");
@@ -92,8 +119,10 @@ export const addProjectMemberController = async (req, res) => {
     );
 }
 
+    await redis.del(membersCacheKey(projectId));
+    await invalidateProjectListCache([userId]);
+
     emitToProject(projectId, "memberAdded", member);
-    // Reaches the new member wherever they are, so their projects list updates.
     emitToUser(userId, "addedToProject", { projectId, title: project.title, role });
 
     return sendSuccess(res, 201, member);
@@ -130,7 +159,7 @@ export const updateProjectMemberController = async (req, res) => {
         );
     }
 
-    const project = await getProjectById(projectId);
+    const project = await getCachedProject(projectId);
 
     if (!project) {
         return sendError(res, 404, "NOT_FOUND", "Project not found");
@@ -154,6 +183,8 @@ export const updateProjectMemberController = async (req, res) => {
     if (!updatedMember) {
         return sendError(res, 404, "NOT_FOUND", "Project member not found");
     }
+
+    await redis.del(membersCacheKey(projectId));
 
     emitToProject(projectId, "memberUpdated", updatedMember);
 
@@ -179,7 +210,7 @@ export const deleteProjectMemberController = async (req, res) => {
     );
 }
 
-    const project = await getProjectById(projectId);
+    const project = await getCachedProject(projectId);
 
     if (!project) {
         return sendError(res, 404, "NOT_FOUND", "Project not found");
@@ -202,6 +233,9 @@ export const deleteProjectMemberController = async (req, res) => {
     if (!deletedMember) {
         return sendError(res, 404, "NOT_FOUND", "Project member not found");
     }
+
+    await redis.del(membersCacheKey(projectId));
+    await invalidateProjectListCache([userId]);
 
     emitToProject(projectId, "memberRemoved", deletedMember);
     removeUserFromProject(projectId, userId);
