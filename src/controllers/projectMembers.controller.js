@@ -7,6 +7,7 @@ import { createProjectMemberSchema, updateProjectMemberSchema } from "../schemas
 import { emitToProject, emitToUser, removeUserFromProject } from "../socket.js";
 import redis from "../redis.js";
 import { projectCacheKey, invalidateProjectListCache } from "./projects.controller.js";
+import { roleCacheKey } from "../middleware/projectRole.middleware.js";
 
 /*
  * The project owner must always hold the Admin role. createProject seeds them
@@ -120,6 +121,7 @@ export const addProjectMemberController = async (req, res) => {
 }
 
     await redis.del(membersCacheKey(projectId));
+    await redis.del(roleCacheKey(userId, projectId));
     await invalidateProjectListCache([userId]);
 
     emitToProject(projectId, "memberAdded", member);
@@ -185,6 +187,7 @@ export const updateProjectMemberController = async (req, res) => {
     }
 
     await redis.del(membersCacheKey(projectId));
+    await redis.del(roleCacheKey(userId, projectId));
 
     emitToProject(projectId, "memberUpdated", updatedMember);
 
@@ -235,6 +238,7 @@ export const deleteProjectMemberController = async (req, res) => {
     }
 
     await redis.del(membersCacheKey(projectId));
+    await redis.del(roleCacheKey(userId, projectId));
     await invalidateProjectListCache([userId]);
 
     emitToProject(projectId, "memberRemoved", deletedMember);

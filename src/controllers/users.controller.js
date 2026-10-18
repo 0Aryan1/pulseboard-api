@@ -5,6 +5,11 @@ import { disconnectUser, emitToProjects, emitToUserAndProjects } from "../socket
 import { sendError, sendSuccess } from "../utils/response.js";
 import { updateUserSchema } from "../schemas/user.schema.js";
 import { formatValidationErrors } from "../utils/validation.js";
+import redis from "../redis.js";
+
+function userCacheKey(userId) {
+    return `user:${userId}`;
+}
 
 
 
@@ -20,12 +25,21 @@ export const getAllUsersController = async (req, res) => {
 export const getUserByIdController = async (req, res) => {
     const userId = Number(req.params.userId);
 
+    const cacheKey = userCacheKey(userId);
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+        return sendSuccess(res, 200, JSON.parse(cached));
+    }
+
     const user = await getUserById(userId);
 
     if (!user) {
         return sendError(res, 404, "NOT_FOUND", "User not found", formatValidationErrors([{ path: ["userId"], message: "User with the specified ID does not exist" }]));
     }
-    
+
+    await redis.set(cacheKey, JSON.stringify(user), "EX", 120);
+
     return sendSuccess(res, 200, user);
 };
 
@@ -52,6 +66,8 @@ export const updateUserController = async (req, res) => {
     if (!updatedUser) {
         return sendError(res, 404, "NOT_FOUND", "User not found");
     }
+
+    await redis.del(userCacheKey(userId));
 
     // Teammates see the new name; the user's other tabs refresh their profile.
     const projectIds = await getUserProjectIds(userId);
@@ -81,6 +97,8 @@ export const deleteUserController = async (req, res) => {
     if (!deletedUser) {
         return sendError(res, 404, "NOT_FOUND", "User not found");
     }
+
+    await redis.del(userCacheKey(userId));
 
     emitToProjects(projectIds, "userDeleted", { id: userId });
     disconnectUser(userId);

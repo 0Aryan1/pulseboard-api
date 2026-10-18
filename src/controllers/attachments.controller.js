@@ -4,6 +4,21 @@ import path from "path";
 import fs from "fs/promises";
 import { uploadQueue } from "../queue.js";
 import { emitToProject } from "../socket.js";
+import redis from "../redis.js";
+
+function attachmentsListCacheKey(taskId) {
+  return `attachments:task:${taskId}`;
+}
+
+function attachmentCacheKey(taskId, attachmentId) {
+  return `attachment:${taskId}:${attachmentId}`;
+}
+
+export async function invalidateAttachmentCaches(taskId, attachmentId) {
+  const keys = [attachmentsListCacheKey(taskId)];
+  if (attachmentId) keys.push(attachmentCacheKey(taskId, attachmentId));
+  await redis.del(...keys);
+}
 
 function hasInvalidIds(taskId, attachmentId) {
     return (
@@ -65,6 +80,8 @@ export const createAttachmentController = async (req, res) => {
         throw error;
     }
 
+    await redis.del(attachmentsListCacheKey(taskId));
+
     emitToProject(req.projectId, "attachmentCreated", attachment);
 
     return sendSuccess(res, 201, attachment);
@@ -73,7 +90,16 @@ export const createAttachmentController = async (req, res) => {
 export const getAttachmentsController = async (req, res) => {
     const taskId = Number(req.params.taskId);
 
+    const cacheKey = attachmentsListCacheKey(taskId);
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+        return sendSuccess(res, 200, JSON.parse(cached));
+    }
+
     const attachments = await getAttachments(taskId);
+
+    await redis.set(cacheKey, JSON.stringify(attachments ?? []), "EX", 120);
 
     return sendSuccess(res, 200, attachments ?? []);
 };
@@ -86,10 +112,19 @@ export const getAttachmentsByIdController = async (req, res) => {
         return sendInvalidIds(res);
     }
 
+    const cacheKey = attachmentCacheKey(taskId, attachmentId);
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+        return sendSuccess(res, 200, JSON.parse(cached));
+    }
+
     const attachment = await getAttachmentById(taskId, attachmentId);
     if (!attachment) {
         return sendError(res, 404, "NOT_FOUND", "Attachment not found");
     }
+
+    await redis.set(cacheKey, JSON.stringify(attachment), "EX", 120);
 
     return sendSuccess(res, 200, attachment);
 };
@@ -162,6 +197,8 @@ export const deleteAttachmentController = async (req, res) => {
     }
 
     const deletedAttachment = await deleteAttachment(taskId, attachmentId);
+
+    await invalidateAttachmentCaches(taskId, attachmentId);
 
     emitToProject(req.projectId, "attachmentDeleted", deletedAttachment);
 

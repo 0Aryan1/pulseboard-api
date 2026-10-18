@@ -2,6 +2,7 @@ import { Job, QueueEvents } from "bullmq";
 import { connection, uploadQueue, UPLOAD_QUEUE_NAME } from "./queue.js";
 import { getAttachmentById, ATTACHMENT_STATUS } from "./data/attachments.data.js";
 import { emitToProject } from "./socket.js";
+import { invalidateAttachmentCaches } from "./controllers/attachments.controller.js";
 
 /*
  * Bridges upload-processing outcomes from src/worker.js to Socket.IO.
@@ -35,6 +36,8 @@ async function forward(jobId, event) {
     // Read the row rather than trusting the job: it may have been deleted.
     const attachment = await getAttachmentById(taskId, attachmentId);
     if (!attachment || attachment.status !== EXPECTED_STATUS[event]) return;
+
+    await invalidateAttachmentCaches(taskId, attachmentId);
 
     emitToProject(projectId, event, attachment);
 }
