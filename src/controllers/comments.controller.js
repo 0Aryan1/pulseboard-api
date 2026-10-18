@@ -12,6 +12,21 @@ import {
   deleteComment,
 } from "../data/comments.data.js";
 import { emitToProject } from "../socket.js";
+import redis from "../redis.js";
+
+function commentsListCacheKey(taskId) {
+  return `comments:task:${taskId}`;
+}
+
+function commentCacheKey(taskId, commentId) {
+  return `comment:${taskId}:${commentId}`;
+}
+
+async function invalidateCommentCaches(taskId, commentId) {
+  const keys = [commentsListCacheKey(taskId)];
+  if (commentId) keys.push(commentCacheKey(taskId, commentId));
+  await redis.del(...keys);
+}
 
 // Members manage their own comments; Admins can moderate anyone's.
 function canManageComment(req, comment) {
@@ -40,7 +55,16 @@ export const getCommentsController = async (req, res) => {
     );
   }
 
+  const cacheKey = commentsListCacheKey(taskId);
+  const cached = await redis.get(cacheKey);
+
+  if (cached) {
+    return sendSuccess(res, 200, JSON.parse(cached));
+  }
+
   const comments = await getAllComments(taskId);
+
+  await redis.set(cacheKey, JSON.stringify(comments), "EX", 120);
 
   return sendSuccess(res, 200, comments);
 };
@@ -64,6 +88,13 @@ export const getCommentByIdController = async (req, res) => {
     );
   }
 
+  const cacheKey = commentCacheKey(taskId, commentId);
+  const cached = await redis.get(cacheKey);
+
+  if (cached) {
+    return sendSuccess(res, 200, JSON.parse(cached));
+  }
+
   const comment = await getCommentById(taskId, commentId);
 
   if (!comment) {
@@ -80,6 +111,8 @@ export const getCommentByIdController = async (req, res) => {
       ]),
     );
   }
+
+  await redis.set(cacheKey, JSON.stringify(comment), "EX", 120);
 
   return sendSuccess(res, 200, comment);
 };
@@ -104,6 +137,8 @@ export const createCommentController = async (req, res) => {
   }
 
   const comment = await createComment(taskId, result.data, req.user.id);
+
+  await redis.del(commentsListCacheKey(taskId));
 
   emitToProject(req.projectId, "commentCreated", comment);
 
@@ -157,6 +192,8 @@ export const updateCommentController = async (req, res) => {
     return sendError(res, 404, "NOT_FOUND", "Comment not found");
   }
 
+  await invalidateCommentCaches(taskId, commentId);
+
   emitToProject(req.projectId, "commentUpdated", updatedComment);
 
   return sendSuccess(res, 200, updatedComment);
@@ -196,6 +233,8 @@ export const deleteCommentController = async (req, res) => {
   if (!deletedComment) {
     return sendError(res, 404, "NOT_FOUND", "Comment not found");
   }
+
+  await invalidateCommentCaches(taskId, commentId);
 
   emitToProject(req.projectId, "commentDeleted", deletedComment);
 
