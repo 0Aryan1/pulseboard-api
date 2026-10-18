@@ -5,6 +5,7 @@ import { formatValidationErrors } from "../utils/validation.js";
 import { getProjectMemberIds } from "../data/projectMembers.data.js";
 import { closeProjectRoom, emitToProject, emitToProjectAndMembers } from "../socket.js";
 import redis from "../redis.js";
+import { roleCacheKey } from "../middleware/projectRole.middleware.js";
 
 export const getAllProjectsController = async (req, res) => {
     const page = Number(req.query.page) || 1;
@@ -156,6 +157,7 @@ export const transferProjectOwnershipController = async (req, res) => {
     }
 
     await redis.del(projectCacheKey(projectId));
+    await redis.del(roleCacheKey(result.data.userId, projectId));
     emitToProject(projectId, "projectUpdated", updatedProject);
     // The new owner was promoted to Admin in the same transaction.
     emitToProject(projectId, "memberUpdated", {

@@ -1,5 +1,10 @@
 import prisma from "../prisma.js";
 import { sendError } from "../utils/response.js";
+import redis from "../redis.js";
+
+export function roleCacheKey(userId, projectId) {
+    return `role:${userId}:${projectId}`;
+}
 
 export const projectRoleMiddleware = (requiredRoles) => {
     return async (req, res, next) => {
@@ -14,6 +19,23 @@ export const projectRoleMiddleware = (requiredRoles) => {
                 "Invalid project ID",
                 []
             );
+        }
+
+        const cacheKey = roleCacheKey(userId, projectId);
+        const cachedRole = await redis.get(cacheKey);
+
+        if (cachedRole) {
+            if (!requiredRoles.includes(cachedRole)) {
+                return sendError(
+                    res,
+                    403,
+                    "FORBIDDEN",
+                    "You do not have permission to perform this action"
+                );
+            }
+
+            req.projectRole = cachedRole;
+            return next();
         }
 
         const membership = await prisma.project_members.findUnique({
@@ -42,6 +64,8 @@ export const projectRoleMiddleware = (requiredRoles) => {
                 "You do not have permission to perform this action"
             );
         }
+
+        await redis.set(cacheKey, membership.role, "EX", 120);
 
         req.projectRole = membership.role;
 
