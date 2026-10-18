@@ -34,6 +34,10 @@ jest.unstable_mockModule("../src/socket.js", () => ({
   emitToProject: mockEmitToProject,
 }));
 
+jest.unstable_mockModule("../src/controllers/attachments.controller.js", () => ({
+  invalidateAttachmentCaches: jest.fn(),
+}));
+
 const { setupUploadEvents } = await import("../src/uploadEvents.js");
 
 setupUploadEvents();
