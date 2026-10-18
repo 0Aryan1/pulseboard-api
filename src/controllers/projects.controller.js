@@ -4,13 +4,40 @@ import { createProjectSchema, updateProjectSchema, transferOwnershipSchema } fro
 import { formatValidationErrors } from "../utils/validation.js";
 import { getProjectMemberIds } from "../data/projectMembers.data.js";
 import { closeProjectRoom, emitToProject, emitToProjectAndMembers } from "../socket.js";
+import redis from "../redis.js";
 
 export const getAllProjectsController = async (req, res) => {
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 15;
     const userId = req.user.id;
 
+    const cacheKey = `projects:user:${userId}:page:${page}:limit:${limit}`;
+
+    const cachedProjects = await redis.get(cacheKey);
+
+    if (cachedProjects) {
+    console.log("CACHE HIT: Returning projects from Redis");
+
+    await redis.sadd(
+        `projects:user:${userId}:cache-keys`,
+        cacheKey
+    );
+
+    await redis.expire(
+        `projects:user:${userId}:cache-keys`,
+        180
+    );
+
+    return sendSuccess(res, 200, JSON.parse(cachedProjects));
+}
+
+    console.log("CACHE MISS: Fetching projects from PostgreSQL");
+
     const projects = await getAllProjectsData(userId, page, limit);
+
+    await redis.set(cacheKey, JSON.stringify(projects), "EX", 120);
+    await redis.sadd(`projects:user:${userId}:cache-keys`, cacheKey);
+    await redis.expire(`projects:user:${userId}:cache-keys`, 180);
 
     return sendSuccess(res, 200, projects);
 };
@@ -18,11 +45,20 @@ export const getAllProjectsController = async (req, res) => {
 export const getProjectByIdController = async (req, res) => {
     const projectId = Number(req.params.projectId);
 
+    const cacheKey = projectCacheKey(projectId);
+    const cached = await redis.get(cacheKey);
+
+    if (cached) {
+        return sendSuccess(res, 200, JSON.parse(cached));
+    }
+
     const project = await getProjectById(projectId);
 
     if (!project) {
         return sendError(res, 404, "NOT_FOUND", "Project not found");
     }
+
+    await redis.set(cacheKey, JSON.stringify(project), "EX", 120);
 
     return sendSuccess(res, 200, project);
 };
@@ -36,6 +72,8 @@ export const createProjectController = async (req, res) => {
     ...result.data,
     userId: req.user.id
   });
+
+  await invalidateProjectListCache([req.user.id]);
 
   return sendSuccess(res, 201, newProject);
 };
@@ -55,6 +93,8 @@ export const updateProjectController = async (req,res) => {
 
     // Members on the projects list see the new title too.
     const memberIds = await getProjectMemberIds(projectId);
+    await invalidateProjectListCache(memberIds);
+    await redis.del(projectCacheKey(projectId));
     emitToProjectAndMembers(projectId, memberIds, "projectUpdated", updatedProject);
 
     return sendSuccess(res, 200, updatedProject);
@@ -115,6 +155,7 @@ export const transferProjectOwnershipController = async (req, res) => {
         );
     }
 
+    await redis.del(projectCacheKey(projectId));
     emitToProject(projectId, "projectUpdated", updatedProject);
     // The new owner was promoted to Admin in the same transaction.
     emitToProject(projectId, "memberUpdated", {
@@ -136,7 +177,28 @@ export const deleteProjectController = async (req, res) => {
 
     if (!deletedProject) return sendError(res, 404, "NOT_FOUND", "Project not found");
 
+    await invalidateProjectListCache(memberIds);
+    await redis.del(projectCacheKey(projectId));
+    await redis.del(`members:project:${projectId}`);
+
     closeProjectRoom(projectId, req.user.id, memberIds);
 
     return sendSuccess(res, 200, deletedProject);
 };
+
+export function projectCacheKey(projectId) {
+    return `project:${projectId}`;
+}
+
+export async function invalidateProjectListCache(userIds) {
+    for (const userId of userIds) {
+        const setKey = `projects:user:${userId}:cache-keys`;
+        const cacheKeys = await redis.smembers(setKey);
+
+        if (cacheKeys.length > 0) {
+            await redis.del(...cacheKeys);
+        }
+
+        await redis.del(setKey);
+    }
+}
