@@ -40,3 +40,6 @@ uploads/
 /pulseboard_*.sql
 
 posts/
+
+# Agent context docs (not shipped with the project)
+docs/
