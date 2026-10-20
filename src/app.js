@@ -6,6 +6,8 @@ import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import logger from "./logger.js";
 import { sendSuccess, sendError } from "./utils/response.js";
+import prisma from "./prisma.js";
+import redis from "./redis.js";
 import projectRoutes from "./routes/projects.routes.js";
 import usersRoutes from "./routes/users.routes.js";
 import projectMembersRoutes from "./routes/projectMembers.routes.js";
@@ -41,10 +43,26 @@ app.use("/api/", apiLimiter);
 // JSON Body Parser Middleware
 app.use(express.json());
 
-// Health Check Endpoint
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
+app.get("/health", async (req, res) => {
+  const checks = { postgres: "ok", redis: "ok" };
+
+  try {
+    await prisma.$queryRawUnsafe("SELECT 1");
+  } catch {
+    checks.postgres = "down";
+  }
+
+  try {
+    await redis.ping();
+  } catch {
+    checks.redis = "down";
+  }
+
+  const healthy = checks.postgres === "ok" && checks.redis === "ok";
+
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? "ok" : "degraded",
+    checks
   });
 });
 
