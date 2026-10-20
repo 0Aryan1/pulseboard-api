@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import prisma from "./prisma.js";
+import logger from "./logger.js";
 
 let ioInstance = null;
 
@@ -27,7 +28,7 @@ export function setupSocket(io) {
     });
 
     io.on("connection", (socket) => {
-        console.log("Socket connected:", socket.id);
+        logger.info({ socketId: socket.id }, "Socket connected");
 
         // Lets the server reach all of a user's tabs, e.g. to remove them
         // from a project they no longer belong to.
@@ -65,9 +66,7 @@ export function setupSocket(io) {
 
             socket.join(room);
 
-            console.log(
-                `User ${socket.user.id} joined ${room}`
-            );
+            logger.info({ userId: socket.user.id, room }, "User joined project room");
         });
 
         socket.on("leaveProject", (projectId) => {
@@ -75,23 +74,18 @@ export function setupSocket(io) {
 
             socket.leave(room);
 
-            console.log(
-                `Socket ${socket.id} left ${room}`
-            );
+            logger.info({ socketId: socket.id, room }, "Socket left project room");
         });
 
         socket.on("disconnect", () => {
-            console.log(
-                "Socket disconnected:",
-                socket.id
-            );
+            logger.info({ socketId: socket.id }, "Socket disconnected");
         });
     });
 }
 
 function getIo() {
     if (!ioInstance) {
-        console.error("Socket.io is not initialized");
+        logger.error("Socket.io is not initialized");
     }
 
     return ioInstance;

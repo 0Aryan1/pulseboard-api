@@ -3,6 +3,8 @@ import helmet from "helmet";
 import cors from "cors";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
+import pinoHttp from "pino-http";
+import logger from "./logger.js";
 import { sendSuccess, sendError } from "./utils/response.js";
 import projectRoutes from "./routes/projects.routes.js";
 import usersRoutes from "./routes/users.routes.js";
@@ -32,16 +34,7 @@ const apiLimiter = rateLimit({
         sendError(res, options.statusCode, "RATE_LIMITED", "Too many requests, please try again later.")
 });
 
-// Request Logging Middleware
-app.use((req, res, next) => {
-  const timeStamp = new Date();
-
-  console.log(
-    `[${timeStamp.toISOString()}] ${req.method} ${req.originalUrl}`
-  );
-
-  next();
-});
+app.use(pinoHttp({ logger }));
 
 app.use("/api/", apiLimiter);
 
@@ -70,9 +63,8 @@ app.use("/api/v1/tasks/:taskId/comments", commentsRoutes);
 app.use("/api/v1/tasks/:taskId/attachments", attachmentsRouter);
 // app.use("/api/v1/attachments", attachmentsRouter);
 
-// Error Handling Middleware
 app.use((err, req, res, next) => {
-  console.error(err);
+  logger.error({ err }, "Unhandled error");
 
   // express.json() rejects a body it cannot parse; that is the client's mistake.
   if (err.type === "entity.parse.failed") {

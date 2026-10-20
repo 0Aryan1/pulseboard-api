@@ -17,8 +17,6 @@ export const getAllProjectsController = async (req, res) => {
     const cachedProjects = await redis.get(cacheKey);
 
     if (cachedProjects) {
-    console.log("CACHE HIT: Returning projects from Redis");
-
     await redis.sadd(
         `projects:user:${userId}:cache-keys`,
         cacheKey
@@ -31,8 +29,6 @@ export const getAllProjectsController = async (req, res) => {
 
     return sendSuccess(res, 200, JSON.parse(cachedProjects));
 }
-
-    console.log("CACHE MISS: Fetching projects from PostgreSQL");
 
     const projects = await getAllProjectsData(userId, page, limit);
 

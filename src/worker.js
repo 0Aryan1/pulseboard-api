@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import { Worker } from "bullmq";
 import { connection, UPLOAD_QUEUE_NAME } from "./queue.js";
 import { updateAttachmentStatus, ATTACHMENT_STATUS } from "./data/attachments.data.js";
+import logger from "./logger.js";
 
 /*
  * Processes uploaded attachments and records the outcome on the row.
@@ -23,7 +24,7 @@ const worker = new Worker(
     async (job) => {
         const { attachmentId, filePath } = job.data;
 
-        console.log("Processing upload job:", job.id);
+        logger.info({ jobId: job.id }, "Processing upload job");
 
         try {
             // The file must still be on disk to be processed at all.
@@ -48,14 +49,11 @@ const worker = new Worker(
 );
 
 worker.on("completed", (job) => {
-    console.log(`Upload job ${job.id} completed`);
+    logger.info({ jobId: job.id }, "Upload job completed");
 });
 
 worker.on("failed", (job, error) => {
-    console.error(
-        `Upload job ${job?.id} failed:`,
-        error.message
-    );
+    logger.error({ jobId: job?.id, err: error }, "Upload job failed");
 });
 
-console.log("Upload worker started");
+logger.info("Upload worker started");

@@ -3,6 +3,7 @@ import { connection, uploadQueue, UPLOAD_QUEUE_NAME } from "./queue.js";
 import { getAttachmentById, ATTACHMENT_STATUS } from "./data/attachments.data.js";
 import { emitToProject } from "./socket.js";
 import { invalidateAttachmentCaches } from "./controllers/attachments.controller.js";
+import logger from "./logger.js";
 
 /*
  * Bridges upload-processing outcomes from src/worker.js to Socket.IO.
@@ -47,14 +48,14 @@ export function setupUploadEvents() {
 
     const handle = (event) => ({ jobId }) =>
         forward(jobId, event).catch((error) =>
-            console.error(`Could not forward ${event} for job ${jobId}:`, error)
+            logger.error({ event, jobId, err: error }, "Could not forward upload event")
         );
 
     queueEvents.on("completed", handle("attachmentReady"));
     queueEvents.on("failed", handle("attachmentFailed"));
 
     queueEvents.on("error", (error) => {
-        console.error("Upload queue events error:", error.message);
+        logger.error({ err: error }, "Upload queue events error");
     });
 
     return queueEvents;

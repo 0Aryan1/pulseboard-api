@@ -2,6 +2,7 @@ import "dotenv/config";
 import http from "http";
 import { Server } from "socket.io";
 import app from "./app.js";
+import logger from "./logger.js";
 import { setupSocket } from "./socket.js";
 import { setupUploadEvents } from "./uploadEvents.js";
 
@@ -21,5 +22,5 @@ setupUploadEvents();
 const PORT = process.env.PORT || 3000;
 
 httpServer.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    logger.info({ port: PORT }, "Server running");
 });
