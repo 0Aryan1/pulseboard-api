@@ -12,29 +12,18 @@ export const getAllProjectsController = async (req, res) => {
     const limit = Number(req.query.limit) || 15;
     const userId = req.user.id;
 
-    const cacheKey = `projects:user:${userId}:page:${page}:limit:${limit}`;
+    const version = (await redis.get(`projects:user:${userId}:version`)) || "0";
+    const cacheKey = `projects:user:${userId}:v:${version}:page:${page}:limit:${limit}`;
 
-    const cachedProjects = await redis.get(cacheKey);
+    const cached = await redis.get(cacheKey);
 
-    if (cachedProjects) {
-    await redis.sadd(
-        `projects:user:${userId}:cache-keys`,
-        cacheKey
-    );
-
-    await redis.expire(
-        `projects:user:${userId}:cache-keys`,
-        180
-    );
-
-    return sendSuccess(res, 200, JSON.parse(cachedProjects));
-}
+    if (cached) {
+        return sendSuccess(res, 200, JSON.parse(cached));
+    }
 
     const projects = await getAllProjectsData(userId, page, limit);
 
     await redis.set(cacheKey, JSON.stringify(projects), "EX", 120);
-    await redis.sadd(`projects:user:${userId}:cache-keys`, cacheKey);
-    await redis.expire(`projects:user:${userId}:cache-keys`, 180);
 
     return sendSuccess(res, 200, projects);
 };
@@ -190,14 +179,11 @@ export function projectCacheKey(projectId) {
 }
 
 export async function invalidateProjectListCache(userIds) {
+    if (userIds.length === 0) return;
+
+    const pipeline = redis.pipeline();
     for (const userId of userIds) {
-        const setKey = `projects:user:${userId}:cache-keys`;
-        const cacheKeys = await redis.smembers(setKey);
-
-        if (cacheKeys.length > 0) {
-            await redis.del(...cacheKeys);
-        }
-
-        await redis.del(setKey);
+        pipeline.incr(`projects:user:${userId}:version`);
     }
+    await pipeline.exec();
 }
