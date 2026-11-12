@@ -27,6 +27,7 @@ coverage/
 
 .agents/
 .claude/
+CLAUDE.md
 .windsurf/
 skills-lock.json
 /src/generated/prisma
