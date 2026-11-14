@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { AuthLayout } from "./AuthLayout.jsx";
 import { credentialsReceived, selectIsAuthenticated } from "./authSlice.js";
@@ -11,11 +11,17 @@ import { useToast } from "../../hooks/useToast.js";
 export default function LoginPage() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const isAuthenticated = useSelector(selectIsAuthenticated);
 
   const [login, { isLoading }] = useLoginMutation();
-  const [form, setForm] = useState({ email: "", password: "" });
+  // SignupPage passes the email along when the account was created but the
+  // automatic sign-in failed.
+  const [form, setForm] = useState({
+    email: location.state?.email ?? "",
+    password: "",
+  });
 
   if (isAuthenticated) return <Navigate to="/projects" replace />;
 
