@@ -367,6 +367,40 @@ describe("Projects API integration", () => {
       expect(newOwnerMembership.role).toBe("Admin");
     });
 
+    test("refreshes the cached members and project lists after a transfer", async () => {
+      const project = await createProject(owner, "Project with cached lists");
+      await addMember(project.id, member, "Member");
+
+      // Warm both caches before the transfer.
+      await api
+        .get(`/api/v1/projects/${project.id}/members`)
+        .set("Authorization", `Bearer ${owner.token}`);
+      await api
+        .get("/api/v1/projects?page=1&limit=100")
+        .set("Authorization", `Bearer ${member.token}`);
+
+      const transfer = await api
+        .put(`/api/v1/projects/${project.id}/owner`)
+        .set("Authorization", `Bearer ${owner.token}`)
+        .send({ userId: member.id });
+
+      expect(transfer.statusCode).toBe(200);
+
+      const members = await api
+        .get(`/api/v1/projects/${project.id}/members`)
+        .set("Authorization", `Bearer ${owner.token}`);
+      const newOwner = members.body.data.find((item) => item.id === member.id);
+
+      expect(newOwner.role).toBe("Admin");
+
+      const projects = await api
+        .get("/api/v1/projects?page=1&limit=100")
+        .set("Authorization", `Bearer ${member.token}`);
+      const listed = projects.body.data.find((item) => item.id === project.id);
+
+      expect(listed.owner_id).toBe(member.id);
+    });
+
     test("rejects an Admin who is not the owner", async () => {
       const project = await createProject(owner, "Project with two Admins");
       await addMember(project.id, member, "Admin");

@@ -143,6 +143,10 @@ export const transferProjectOwnershipController = async (req, res) => {
 
     await redis.del(projectCacheKey(projectId));
     await redis.del(roleCacheKey(result.data.userId, projectId));
+    // The new owner's role changed, and every member's project list shows
+    // the owner.
+    await redis.del(`members:project:${projectId}`);
+    await invalidateProjectListCache(await getProjectMemberIds(projectId));
     emitToProject(projectId, "projectUpdated", updatedProject);
     // The new owner was promoted to Admin in the same transaction.
     emitToProject(projectId, "memberUpdated", {
