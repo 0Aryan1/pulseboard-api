@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import { Worker } from "bullmq";
 import { connection, UPLOAD_QUEUE_NAME } from "./queue.js";
 import { updateAttachmentStatus, ATTACHMENT_STATUS } from "./data/attachments.data.js";
+import prisma from "./prisma.js";
 import logger from "./logger.js";
 
 /*
@@ -57,3 +58,35 @@ worker.on("failed", (job, error) => {
 });
 
 logger.info("Upload worker started");
+
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+let shuttingDown = false;
+
+async function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    logger.info({ signal }, "Shutdown signal received, finishing the current job");
+
+    const forceExit = setTimeout(() => {
+        logger.error("Graceful shutdown timed out, forcing exit");
+        process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+
+    try {
+        // Waits for the job in progress, so its row is not left 'processing'.
+        await worker.close();
+        await prisma.$disconnect();
+
+        clearTimeout(forceExit);
+        logger.info("Shutdown complete");
+        process.exit(0);
+    } catch (err) {
+        logger.error({ err }, "Error during shutdown");
+        clearTimeout(forceExit);
+        process.exit(1);
+    }
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

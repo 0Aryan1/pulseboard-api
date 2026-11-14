@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 
 const mockUpdateAttachmentStatus = jest.fn();
+const mockWorkerClose = jest.fn();
+const mockDisconnect = jest.fn();
 let processJob;
 
 // Capture the processor the worker registers instead of connecting to Redis.
@@ -14,7 +16,15 @@ jest.unstable_mockModule("bullmq", () => ({
     }
 
     on() {}
+
+    close() {
+      return mockWorkerClose();
+    }
   },
+}));
+
+jest.unstable_mockModule("../src/prisma.js", () => ({
+  default: { $disconnect: mockDisconnect },
 }));
 
 jest.unstable_mockModule("../src/queue.js", () => ({
@@ -31,7 +41,46 @@ jest.unstable_mockModule("../src/data/attachments.data.js", () => ({
   },
 }));
 
+// Capture the worker's signal handlers instead of letting them see real signals.
+const signalHandlers = {};
+const originalOn = process.on.bind(process);
+const processOn = jest.spyOn(process, "on").mockImplementation((event, handler) => {
+  if (event === "SIGTERM" || event === "SIGINT") {
+    signalHandlers[event] = handler;
+    return process;
+  }
+  return originalOn(event, handler);
+});
+
 await import("../src/worker.js");
+
+processOn.mockRestore();
+
+describe("upload worker shutdown", () => {
+  test("finishes the current job and disconnects before exiting, once", async () => {
+    const exit = jest.spyOn(process, "exit").mockImplementation(() => {});
+    let finishJob;
+    mockWorkerClose.mockReturnValue(new Promise((resolve) => (finishJob = resolve)));
+
+    signalHandlers.SIGTERM();
+    signalHandlers.SIGINT();
+
+    // Still waiting for the job in progress.
+    await Promise.resolve();
+    expect(exit).not.toHaveBeenCalled();
+    expect(mockDisconnect).not.toHaveBeenCalled();
+
+    finishJob();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockWorkerClose).toHaveBeenCalledTimes(1);
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(0);
+
+    exit.mockRestore();
+  });
+});
 
 describe("upload worker", () => {
   let tempDir;
