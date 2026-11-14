@@ -47,7 +47,7 @@ function canManageTask(req, task) {
 
 function changesTaskDetails(task, data) {
   return (
-    data.title !== task.title ||
+    (data.title !== undefined && data.title !== task.title) ||
     (data.description !== undefined &&
       data.description !== (task.description ?? ""))
   );
