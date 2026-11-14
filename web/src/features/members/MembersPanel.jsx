@@ -22,8 +22,8 @@ import {
 
 function MemberRow({ member, projectId, canManage, isSelf, isOwner, canTransfer }) {
   const toast = useToast();
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [transferOpen, setTransferOpen] = useState(false);
+  // One value, so only one dialog can be open at a time.
+  const [dialog, setDialog] = useState(null); // null | "remove" | "transfer"
   const [updateRole, { isLoading: isUpdating }] = useUpdateMemberRoleMutation();
   const [removeMember, { isLoading: isRemoving }] = useRemoveMemberMutation();
   const [transferOwnership, { isLoading: isTransferring }] =
@@ -46,7 +46,7 @@ function MemberRow({ member, projectId, canManage, isSelf, isOwner, canTransfer 
   const onRemove = async () => {
     try {
       await removeMember({ projectId, userId: member.id }).unwrap();
-      setConfirmOpen(false);
+      setDialog(null);
       toast.success("Member removed.");
     } catch (error) {
       toast.error(error, "Could not remove the member.");
@@ -56,7 +56,7 @@ function MemberRow({ member, projectId, canManage, isSelf, isOwner, canTransfer 
   const onTransfer = async () => {
     try {
       await transferOwnership({ projectId, userId: member.id }).unwrap();
-      setTransferOpen(false);
+      setDialog(null);
       toast.success(`${member.name} is now the project owner.`);
     } catch (error) {
       toast.error(error, "Could not transfer ownership.");
@@ -103,7 +103,7 @@ function MemberRow({ member, projectId, canManage, isSelf, isOwner, canTransfer 
       {canTransfer && (
         <button
           type="button"
-          onClick={() => setTransferOpen(true)}
+          onClick={() => setDialog("transfer")}
           className="text-xs whitespace-nowrap text-ink-subtle transition-colors hover:text-brand-700"
         >
           Make owner
@@ -113,7 +113,7 @@ function MemberRow({ member, projectId, canManage, isSelf, isOwner, canTransfer 
       {canManage && !isOwner && (
         <button
           type="button"
-          onClick={() => setConfirmOpen(true)}
+          onClick={() => setDialog("remove")}
           className="text-xs text-ink-subtle transition-colors hover:text-red-600"
         >
           Remove
@@ -121,8 +121,8 @@ function MemberRow({ member, projectId, canManage, isSelf, isOwner, canTransfer 
       )}
 
       <ConfirmDialog
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
+        open={dialog === "remove"}
+        onClose={() => setDialog(null)}
         onConfirm={onRemove}
         loading={isRemoving}
         confirmLabel="Remove"
@@ -135,8 +135,8 @@ function MemberRow({ member, projectId, canManage, isSelf, isOwner, canTransfer 
       />
 
       <ConfirmDialog
-        open={transferOpen}
-        onClose={() => setTransferOpen(false)}
+        open={dialog === "transfer"}
+        onClose={() => setDialog(null)}
         onConfirm={onTransfer}
         loading={isTransferring}
         confirmLabel="Transfer ownership"

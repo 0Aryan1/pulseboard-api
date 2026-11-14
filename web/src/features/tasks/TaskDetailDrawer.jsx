@@ -34,8 +34,8 @@ export function TaskDetailDrawer({ task, projectId, onClose }) {
   const toast = useToast();
   const currentUserId = useSelector(selectCurrentUserId);
   const { isAdmin } = useProjectRole(projectId);
-  const [editOpen, setEditOpen] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  // One value, so only one dialog can be open at a time.
+  const [dialog, setDialog] = useState(null); // null | "edit" | "delete"
 
   const [updateTask, { isLoading: isUpdating }] = useUpdateTaskMutation();
   const [deleteTask, { isLoading: isDeleting }] = useDeleteTaskMutation();
@@ -74,7 +74,7 @@ export function TaskDetailDrawer({ task, projectId, onClose }) {
   const onDelete = async () => {
     try {
       await deleteTask({ projectId, taskId: task.id }).unwrap();
-      setConfirmOpen(false);
+      setDialog(null);
       onClose();
       toast.success("Task deleted.");
     } catch (error) {
@@ -121,10 +121,10 @@ export function TaskDetailDrawer({ task, projectId, onClose }) {
 
           {canManage && (
             <div className="mt-3 flex gap-2">
-              <Button size="sm" variant="secondary" onClick={() => setEditOpen(true)}>
+              <Button size="sm" variant="secondary" onClick={() => setDialog("edit")}>
                 Edit
               </Button>
-              <Button size="sm" variant="danger" onClick={() => setConfirmOpen(true)}>
+              <Button size="sm" variant="danger" onClick={() => setDialog("delete")}>
                 Delete
               </Button>
             </div>
@@ -171,15 +171,15 @@ export function TaskDetailDrawer({ task, projectId, onClose }) {
       </aside>
 
       <TaskFormModal
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
+        open={dialog === "edit"}
+        onClose={() => setDialog(null)}
         projectId={projectId}
         task={task}
       />
 
       <ConfirmDialog
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
+        open={dialog === "delete"}
+        onClose={() => setDialog(null)}
         onConfirm={onDelete}
         loading={isDeleting}
         title="Delete this task?"
