@@ -172,4 +172,38 @@ describe("Socket.IO project rooms", () => {
 
     expect(events).toEqual([]);
   });
+
+  test("stays out of the room when it leaves before the join finishes", async () => {
+    const client = await connected(connect(member.token));
+    const room = `project:${projectId}`;
+
+    // The join awaits a membership lookup; the leave arrives during it.
+    client.emit("joinProject", projectId);
+    client.emit("leaveProject", projectId);
+
+    // Give the membership lookup time to finish.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const sockets = await io.in(room).fetchSockets();
+    expect(sockets.some((socket) => socket.id === client.id)).toBe(false);
+
+    const events = [];
+    client.on("taskCreated", (data) => events.push(data));
+
+    emitToProject(projectId, "taskCreated", { id: 4 });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(events).toEqual([]);
+  });
+
+  test("can join again after leaving mid-join", async () => {
+    const client = await connected(connect(member.token));
+    const room = `project:${projectId}`;
+
+    client.emit("joinProject", projectId);
+    client.emit("leaveProject", projectId);
+    client.emit("joinProject", projectId);
+
+    await waitForRoom(client, room);
+  });
 });
