@@ -26,6 +26,7 @@ jest.unstable_mockModule("../src/queue.js", () => ({
 const { default: request } = await import("supertest");
 const { default: app } = await import("../src/app.js");
 const { default: prisma } = await import("../src/prisma.js");
+const { updateAttachmentStatus } = await import("../src/data/attachments.data.js");
 
 const api = request(app);
 
@@ -131,13 +132,17 @@ describe("Attachments API integration", () => {
       expect(attachment.uploaded_by).toBe(member.id);
       expect(await fs.readFile(attachment.file_url)).toEqual(PNG_CONTENT);
 
-      expect(mockQueueAdd).toHaveBeenCalledWith("processUpload", {
-        attachmentId: attachment.id,
-        taskId,
-        projectId,
-        fileName: "diagram.png",
-        filePath: attachment.file_url,
-      });
+      expect(mockQueueAdd).toHaveBeenCalledWith(
+        "processUpload",
+        {
+          attachmentId: attachment.id,
+          taskId,
+          projectId,
+          fileName: "diagram.png",
+          filePath: attachment.file_url,
+        },
+        expect.objectContaining({ attempts: 3 }),
+      );
       expect(mockEmitToProject).toHaveBeenCalledWith(
         projectId,
         "attachmentCreated",
@@ -231,6 +236,54 @@ describe("Attachments API integration", () => {
         "attachmentCreated",
         expect.objectContaining({ id: newAttachments[0].id, status: "failed" }),
       );
+    });
+
+    test("refreshes the cached list when the upload cannot be queued", async () => {
+      // Warm the list cache first.
+      await api
+        .get(attachmentsUrl())
+        .set("Authorization", `Bearer ${member.token}`);
+
+      mockQueueAdd.mockRejectedValueOnce(new Error("Redis unavailable"));
+      await upload();
+
+      const failed = await prisma.attachments.findFirst({
+        where: { task_id: taskId, status: "failed" },
+        orderBy: { id: "desc" },
+      });
+      uploadedFiles.push(failed.file_url);
+
+      const response = await api
+        .get(attachmentsUrl())
+        .set("Authorization", `Bearer ${member.token}`);
+
+      expect(response.body.data.map((item) => item.id)).toContain(failed.id);
+    });
+  });
+
+  describe("status lifecycle", () => {
+    test("moves a processing attachment to its final status", async () => {
+      const attachment = await uploadAttachment();
+
+      const updated = await updateAttachmentStatus(attachment.id, "ready");
+
+      expect(updated).toEqual(expect.objectContaining({ id: attachment.id, status: "ready" }));
+    });
+
+    test("never changes an attachment that is already final", async () => {
+      const attachment = await uploadAttachment();
+      await updateAttachmentStatus(attachment.id, "failed");
+
+      // e.g. the worker finishing a job the API already marked failed.
+      const updated = await updateAttachmentStatus(attachment.id, "ready");
+
+      expect(updated).toBeUndefined();
+      const row = await prisma.attachments.findUnique({ where: { id: attachment.id } });
+      expect(row.status).toBe("failed");
+    });
+
+    test("returns undefined for a deleted attachment", async () => {
+      expect(await updateAttachmentStatus(999999999, "ready")).toBeUndefined();
     });
   });
 

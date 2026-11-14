@@ -24,21 +24,32 @@ export async function createAttachment(taskId, fileName, fileUrl, uploadedBy) {
     });
 }
 
-/** Returns undefined if the attachment was deleted in the meantime. */
+/**
+ * Moves an attachment out of 'processing'. 'ready' and 'failed' are final, so
+ * a late write (e.g. the worker finishing a job the API already marked failed)
+ * changes nothing.
+ *
+ * Returns undefined if the attachment was deleted or had already left
+ * 'processing'.
+ */
 export async function updateAttachmentStatus(attachmentId, status) {
-    try {
-        return await prisma.attachments.update({
-            where: {
-                id: attachmentId
-            },
-            data: {
-                status
-            }
-        });
-    } catch (error) {
-        if (isRecordNotFound(error)) return undefined;
-        throw error;
-    }
+    const { count } = await prisma.attachments.updateMany({
+        where: {
+            id: attachmentId,
+            status: ATTACHMENT_STATUS.PROCESSING
+        },
+        data: {
+            status
+        }
+    });
+
+    if (count === 0) return undefined;
+
+    return await prisma.attachments.findUnique({
+        where: {
+            id: attachmentId
+        }
+    });
 }
 
 export async function getAttachments(taskId) {
