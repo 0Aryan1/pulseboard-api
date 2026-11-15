@@ -27,8 +27,15 @@ httpServer.listen(PORT, () => {
 });
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
+let shuttingDown = false;
 
 async function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    // /health answers 503 from here on, so a load balancer stops routing here.
+    app.locals.shuttingDown = true;
+
     logger.info({ signal }, "Shutdown signal received, draining connections");
 
     const forceExit = setTimeout(() => {
@@ -37,10 +44,11 @@ async function shutdown(signal) {
     }, SHUTDOWN_TIMEOUT_MS);
 
     try {
-        httpServer.close();
-        io.close();
-        queueEvents.close().catch(() => {});
-        redis.disconnect();
+        // Disconnects every socket, then closes the HTTP server, which waits
+        // for in-flight requests to finish.
+        await io.close();
+        await queueEvents.close().catch(() => {});
+        await redis.quit();
         await prisma.$disconnect();
 
         clearTimeout(forceExit);

@@ -23,8 +23,8 @@ export function ProjectSettings({ project }) {
   const navigate = useNavigate();
   const { isAdmin } = useProjectRole(project.id);
 
-  const [editOpen, setEditOpen] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  // One value, so only one dialog can be open at a time.
+  const [dialog, setDialog] = useState(null); // null | "edit" | "delete"
   const [deleteProject, { isLoading: isDeleting }] = useDeleteProjectMutation();
 
   const onDelete = async () => {
@@ -44,7 +44,7 @@ export function ProjectSettings({ project }) {
           title="Project details"
           action={
             isAdmin && (
-              <Button size="sm" variant="secondary" onClick={() => setEditOpen(true)}>
+              <Button size="sm" variant="secondary" onClick={() => setDialog("edit")}>
                 Edit
               </Button>
             )
@@ -66,7 +66,7 @@ export function ProjectSettings({ project }) {
             <p className="text-xs text-ink-muted">
               Deleting a project also removes its tasks, comments, and attachments.
             </p>
-            <Button variant="danger" size="sm" onClick={() => setConfirmOpen(true)}>
+            <Button variant="danger" size="sm" onClick={() => setDialog("delete")}>
               Delete project
             </Button>
           </div>
@@ -78,14 +78,14 @@ export function ProjectSettings({ project }) {
       )}
 
       <ProjectFormModal
-        open={editOpen}
-        onClose={() => setEditOpen(false)}
+        open={dialog === "edit"}
+        onClose={() => setDialog(null)}
         project={project}
       />
 
       <ConfirmDialog
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
+        open={dialog === "delete"}
+        onClose={() => setDialog(null)}
         onConfirm={onDelete}
         loading={isDeleting}
         title={`Delete "${project.title}"?`}

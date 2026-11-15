@@ -30,9 +30,16 @@ export default function SignupPage() {
     event.preventDefault();
 
     try {
-      // POST /auth/signup returns the user but no token, so sign in right after.
       await signup(form).unwrap();
+    } catch (error) {
+      toast.error(error, "Could not create the account.");
+      return;
+    }
 
+    // POST /auth/signup returns the user but no token, so sign in right after.
+    // The account exists from here on: if this step fails, retrying signup
+    // would only answer EMAIL_TAKEN, so send the user to sign in instead.
+    try {
       const { token } = await login({
         email: form.email,
         password: form.password,
@@ -41,8 +48,9 @@ export default function SignupPage() {
       dispatch(credentialsReceived({ token }));
       toast.success("Account created. Welcome to PulseBoard.");
       navigate("/projects", { replace: true });
-    } catch (error) {
-      toast.error(error, "Could not create the account.");
+    } catch {
+      toast.success("Account created. Please sign in.");
+      navigate("/login", { replace: true, state: { email: form.email } });
     }
   };
 

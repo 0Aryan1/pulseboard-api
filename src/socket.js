@@ -34,6 +34,11 @@ export function setupSocket(io) {
         // from a project they no longer belong to.
         socket.join(`user:${socket.user.id}`);
 
+        // Projects this socket currently wants to be in. joinProject awaits a
+        // DB lookup but leaveProject does not, so a quick join-then-leave
+        // would otherwise finish the join after the leave and stay in the room.
+        socket.data.wantedProjects = new Set();
+
         socket.on("joinProject", async (projectId) => {
             const numericProjectId = Number(projectId);
 
@@ -45,14 +50,27 @@ export function setupSocket(io) {
                 return;
             }
 
-            const membership = await prisma.project_members.findUnique({
-                where: {
-                    user_id_project_id: {
-                        user_id: socket.user.id,
-                        project_id: numericProjectId
+            socket.data.wantedProjects.add(numericProjectId);
+
+            let membership;
+
+            try {
+                membership = await prisma.project_members.findUnique({
+                    where: {
+                        user_id_project_id: {
+                            user_id: socket.user.id,
+                            project_id: numericProjectId
+                        }
                     }
-                }
-            });
+                });
+            } catch (err) {
+                logger.error({ err, projectId: numericProjectId }, "Could not check project membership");
+                socket.emit("projectError", "Could not join the project");
+                return;
+            }
+
+            // Left (or disconnected) while the lookup was running.
+            if (!socket.data.wantedProjects.has(numericProjectId)) return;
 
             if (!membership) {
                 socket.emit(
@@ -70,8 +88,10 @@ export function setupSocket(io) {
         });
 
         socket.on("leaveProject", (projectId) => {
-            const room = `project:${projectId}`;
+            const numericProjectId = Number(projectId);
+            const room = `project:${numericProjectId}`;
 
+            socket.data.wantedProjects.delete(numericProjectId);
             socket.leave(room);
 
             logger.info({ socketId: socket.id, room }, "Socket left project room");

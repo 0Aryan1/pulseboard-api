@@ -20,6 +20,13 @@ export async function invalidateAttachmentCaches(taskId, attachmentId) {
   await redis.del(...keys);
 }
 
+// A failed attempt is retried before the row is marked failed; src/worker.js
+// only writes 'failed' on the last one.
+const UPLOAD_JOB_OPTIONS = {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 1000 }
+};
+
 function hasInvalidIds(taskId, attachmentId) {
     return (
         !Number.isInteger(taskId) ||
@@ -71,11 +78,12 @@ export const createAttachmentController = async (req, res) => {
             projectId: req.projectId,
             fileName: req.file.originalname,
             filePath: req.file.path
-        });
+        }, UPLOAD_JOB_OPTIONS);
     } catch (error) {
         // No job means nothing will ever finish processing this row, so mark
         // it failed rather than leaving it stuck in 'processing'.
         const failed = await updateAttachmentStatus(attachment.id, ATTACHMENT_STATUS.FAILED);
+        await redis.del(attachmentsListCacheKey(taskId));
         emitToProject(req.projectId, "attachmentCreated", failed ?? attachment);
         throw error;
     }

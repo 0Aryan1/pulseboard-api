@@ -44,6 +44,11 @@ app.use("/api/", apiLimiter);
 app.use(express.json());
 
 app.get("/health", async (req, res) => {
+  // Set by the shutdown handler in server.js.
+  if (req.app.locals.shuttingDown) {
+    return res.status(503).json({ status: "draining" });
+  }
+
   const checks = { postgres: "ok", redis: "ok" };
 
   try {

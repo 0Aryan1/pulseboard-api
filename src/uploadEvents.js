@@ -1,6 +1,6 @@
 import { Job, QueueEvents } from "bullmq";
 import { connection, uploadQueue, UPLOAD_QUEUE_NAME } from "./queue.js";
-import { getAttachmentById, ATTACHMENT_STATUS } from "./data/attachments.data.js";
+import { getAttachmentById, updateAttachmentStatus, ATTACHMENT_STATUS } from "./data/attachments.data.js";
 import { emitToProject } from "./socket.js";
 import { invalidateAttachmentCaches } from "./controllers/attachments.controller.js";
 import logger from "./logger.js";
@@ -18,8 +18,8 @@ import logger from "./logger.js";
  * stays correct with more than one API process.
  */
 
-// Only a status the worker has actually committed is announced; a failed
-// attempt that will be retried leaves the row in 'processing'.
+// Only a committed status is announced; a failed attempt that will be retried
+// leaves the row in 'processing'.
 const EXPECTED_STATUS = {
     attachmentReady: ATTACHMENT_STATUS.READY,
     attachmentFailed: ATTACHMENT_STATUS.FAILED
@@ -35,7 +35,22 @@ async function forward(jobId, event) {
     if (!projectId) return;
 
     // Read the row rather than trusting the job: it may have been deleted.
-    const attachment = await getAttachmentById(taskId, attachmentId);
+    let attachment = await getAttachmentById(taskId, attachmentId);
+    if (!attachment) return;
+
+    // The worker writes 'failed' on its last attempt, but a job that crashed
+    // or stalled never got that far. Once BullMQ has given up on the job, close
+    // the row here so it cannot stay 'processing' forever.
+    if (
+        event === "attachmentFailed" &&
+        attachment.status === ATTACHMENT_STATUS.PROCESSING &&
+        (await job.getState()) === "failed"
+    ) {
+        attachment =
+            (await updateAttachmentStatus(attachmentId, ATTACHMENT_STATUS.FAILED)) ??
+            (await getAttachmentById(taskId, attachmentId));
+    }
+
     if (!attachment || attachment.status !== EXPECTED_STATUS[event]) return;
 
     await invalidateAttachmentCaches(taskId, attachmentId);

@@ -162,6 +162,58 @@ describe("Task permissions", () => {
       expect((await findTask(taskId)).status).toBe("Completed");
     });
 
+    test("lets another Member send only the status", async () => {
+      const task = await createTask();
+
+      const response = await api
+        .put(taskUrl(task.id))
+        .set("Authorization", `Bearer ${otherMember.token}`)
+        .send({ status: "In Progress" });
+
+      expect(response.statusCode).toBe(200);
+
+      const savedTask = await findTask(task.id);
+
+      expect(savedTask.status).toBe("In Progress");
+      expect(savedTask.title).toBe("Original title");
+      expect(savedTask.description).toBe("Original description");
+    });
+
+    test("does not undo a rename when the status changes afterwards", async () => {
+      const task = await createTask();
+
+      // The creator renames the task...
+      await api
+        .put(taskUrl(task.id))
+        .set("Authorization", `Bearer ${creator.token}`)
+        .send({ title: "Renamed", status: "Pending" });
+
+      // ...then an Admin, whose tab has not seen the rename, moves it.
+      const response = await api
+        .put(taskUrl(task.id))
+        .set("Authorization", `Bearer ${admin.token}`)
+        .send({ status: "Completed" });
+
+      expect(response.statusCode).toBe(200);
+
+      const savedTask = await findTask(task.id);
+
+      expect(savedTask.title).toBe("Renamed");
+      expect(savedTask.status).toBe("Completed");
+    });
+
+    test("still requires a status", async () => {
+      const task = await createTask();
+
+      const response = await api
+        .put(taskUrl(task.id))
+        .set("Authorization", `Bearer ${creator.token}`)
+        .send({ title: "No status" });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.error.code).toBe("VALIDATION_ERROR");
+    });
+
     test("lets an Admin edit another user's task", async () => {
       const task = await createTask();
 

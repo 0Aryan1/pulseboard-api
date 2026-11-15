@@ -25,8 +25,8 @@ export const tasksApi = api.injectEndpoints({
       ],
     }),
 
-    // The API has no PATCH: updateTaskSchema requires title and status on every
-    // update, so callers must send the whole task even to move a column.
+    // PUT, but only status is required: a status change sends just
+    // { status }, and the title/description are left as they are.
     updateTask: builder.mutation({
       query: ({ projectId, taskId, ...body }) => ({
         url: `/projects/${projectId}/tasks/${taskId}`,
