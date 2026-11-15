@@ -1,0 +1,31 @@
+# SSM document "PulseboardDeploy": the only command the GitHub deploy key may run.
+# It takes a commit ID and nothing else, so a leaked key can redeploy a commit
+# from this repo but can't run its own commands on the server.
+#
+# Create or update it from CloudShell (see DEPLOYMENT.md):
+#   aws ssm create-document --name PulseboardDeploy --document-type Command \
+#     --document-format YAML --content file://ssm-deploy-document.yaml
+schemaVersion: "2.2"
+description: Deploy one PulseBoard commit with scripts/deploy.sh
+parameters:
+  commitSha:
+    type: String
+    description: Full 40-character commit ID to deploy
+    allowedPattern: "^[0-9a-f]{40}$"
+  allowMigrations:
+    type: String
+    description: "true if this deploy's new migrations are already applied"
+    allowedValues: ["true", "false"]
+    default: "false"
+mainSteps:
+  - action: aws:runShellScript
+    name: deploy
+    inputs:
+      timeoutSeconds: "900"
+      # SSM runs these as root. The script comes from the commit being deployed
+      # and runs as ubuntu, which owns the app and PM2.
+      runCommand:
+        - set -e
+        - sudo -u ubuntu -H git -C /home/ubuntu/pulseboard-api fetch --quiet origin
+        - sudo -u ubuntu -H git -C /home/ubuntu/pulseboard-api show {{ commitSha }}:scripts/deploy.sh > /tmp/pulseboard-deploy.sh
+        - sudo -u ubuntu -i bash /tmp/pulseboard-deploy.sh {{ commitSha }} {{ allowMigrations }}
