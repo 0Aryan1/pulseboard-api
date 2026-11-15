@@ -157,7 +157,7 @@ GitHub repo → Settings → Secrets and variables → Actions:
 2. Security group inbound: SSH 22 from your IP range, HTTP 80 and HTTPS 443 from anywhere.
 3. Allocate an Elastic IP and attach it to the instance.
 4. Create the DuckDNS subdomain pointing to the Elastic IP.
-5. On the server: add swap (the instance has under 1 GB of RAM), install Node 20, PM2 and Caddy.
+5. On the server: add swap (the instance has under 1 GB of RAM), install Node 22 (NodeSource `setup_22.x`), PM2 and Caddy. Use the same Node major version as CI (`.github/workflows/deploy.yml`).
 6. `git clone`, `npm ci`, `DATABASE_URL=postgresql://x:x@localhost/x npx prisma generate` (the fake URL is fine, generate never connects), create `.env`.
 7. Start both processes from `~/pulseboard-api`:
    ```bash
@@ -186,6 +186,24 @@ SSH in:
 ```bash
 ssh -i ~/Downloads/pulseboard.pem ubuntu@16.178.0.161
 ```
+
+Never run `npm audit fix` or `npm install <pkg>` on the server. It changes `package-lock.json` there, and the next deploy's `git reset` undoes it. Make dependency changes on a branch and merge them.
+
+## Upgrading Node
+
+Node comes from NodeSource. To move to a new major version (example: 22), change `node-version` in `.github/workflows/deploy.yml` first and check CI passes, then on the server:
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x -o /tmp/nodesource_setup.sh
+sudo bash /tmp/nodesource_setup.sh
+sudo apt-get install -y nodejs      # the running app keeps the old Node until restarted
+cd ~/pulseboard-api && npm ci       # rebuilds native modules (bcrypt) for the new Node
+npx prisma generate
+pm2 update                          # restarts the PM2 daemon and both apps on the new Node
+curl localhost:3000/health
+```
+
+Then reboot once (`sudo reboot`) to check PM2 brings the apps back on its own. To go back, repeat with the old version's `setup_XX.x`.
 
 ## Uploads
 
