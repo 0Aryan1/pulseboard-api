@@ -62,17 +62,94 @@ Apply changes with `sudo systemctl restart caddy`. WebSockets (Socket.IO) work t
 
 Frontend: push to `main`. Vercel redeploys automatically.
 
-Backend: SSH in and run:
+Backend: push to `main`. GitHub Actions runs the tests and then deploys (see [Automatic deploys](#automatic-deploys-github-actions--ssm)). Watch it in the repo's **Actions** tab.
+
+If the change includes a new file in `migrations/`, the deploy stops before touching the server. Apply that SQL to Neon first (for example with `psql "$DATABASE_URL" -f migrations/NNN_name.sql`), then open **Actions → Test and deploy → Run workflow**, tick "I already applied this deploy's new migrations", and run it on `main`. Migrations are raw SQL and applied by hand.
+
+To deploy by hand instead (SSH in):
 
 ```bash
 cd ~/pulseboard-api
-git pull
-npm ci
-npx prisma generate   # needs DATABASE_URL set; the real .env is loaded from the project folder
-pm2 restart all
+git fetch origin
+bash scripts/deploy.sh origin/main        # add "true" as a second argument if migrations are applied
 ```
 
-If the change includes a new file in `migrations/`, apply that SQL to Neon first (for example with `psql "$DATABASE_URL" -f migrations/NNN_name.sql`). Migrations are raw SQL and applied by hand.
+## Automatic deploys (GitHub Actions + SSM)
+
+`.github/workflows/deploy.yml` runs on every push to `main`:
+
+1. **test**: a fresh GitHub runner starts throwaway Postgres 16 and Redis 7, applies `migrations/*.sql`, and runs `npm test`. Pull requests run this job too, but never deploy.
+2. **deploy** (only if the tests pass): the job signs in to AWS with the `pulseboard-github-deploy` IAM user's key and sends an SSM Run Command with the `PulseboardDeploy` document. The SSM agent on the server runs `scripts/deploy.sh <commit>` as `ubuntu`. The job waits, prints the script's output, and goes red if it failed.
+
+`scripts/deploy.sh` does: `git fetch` → stop if new migrations (unless allowed) → `git reset --hard <commit>` → `npm ci` only if `package-lock.json` changed → `npx prisma generate` → `pm2 restart api worker` → check `/health` for about 30s. If `/health` fails, it goes back to the previous commit and restarts again.
+
+Port 22 is not used by the deploy.
+
+**Why a stored key and not OIDC:** the account is on the AWS Free plan, whose organization policy denies `iam:CreateOpenIDConnectProvider`. So GitHub uses an IAM user key instead, locked down so a leak does little harm: the key may only run the `PulseboardDeploy` document (`scripts/ssm-deploy-document.yaml`) on this one instance, and that document accepts nothing but a 40-character commit ID. If the account moves to a paid plan, switching to OIDC removes the stored key.
+
+### One-time AWS setup
+
+Run the `aws` commands in **CloudShell** (Sydney region). Run `export AWS_PAGER=""` first so long output doesn't open a pager.
+
+**A. Let the server talk to SSM**
+
+```bash
+aws iam create-role --role-name pulseboard-ec2-ssm --assume-role-policy-document \
+  '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+aws iam attach-role-policy --role-name pulseboard-ec2-ssm \
+  --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+aws iam create-instance-profile --instance-profile-name pulseboard-ec2-ssm
+aws iam add-role-to-instance-profile --instance-profile-name pulseboard-ec2-ssm --role-name pulseboard-ec2-ssm
+aws ec2 associate-iam-instance-profile --instance-id <INSTANCE_ID> --iam-instance-profile Name=pulseboard-ec2-ssm
+```
+
+Then on the server: `sudo snap restart amazon-ssm-agent`. Check with `aws ssm describe-instance-information --query "InstanceInformationList[].[InstanceId,PingStatus]" --output text`. It should say `Online`.
+
+**B. Create the deploy document**
+
+Copy `scripts/ssm-deploy-document.yaml` into CloudShell (paste it with `cat > ssm-deploy-document.yaml`), then:
+
+```bash
+aws ssm create-document --name PulseboardDeploy --document-type Command \
+  --document-format YAML --content file://ssm-deploy-document.yaml
+```
+
+After changing the file later, use `aws ssm update-document --name PulseboardDeploy --document-format YAML --content file://ssm-deploy-document.yaml --document-version '$LATEST'`, then `aws ssm update-document-default-version --name PulseboardDeploy --document-version <new version>`.
+
+**C. Create the deploy user and its key**
+
+```bash
+aws iam create-user --user-name pulseboard-github-deploy
+aws iam put-user-policy --user-name pulseboard-github-deploy --policy-name deploy-via-ssm --policy-document '{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ec2:ap-southeast-2:<ACCOUNT_ID>:instance/<INSTANCE_ID>",
+        "arn:aws:ssm:ap-southeast-2:<ACCOUNT_ID>:document/PulseboardDeploy"
+      ]
+    },
+    { "Effect": "Allow", "Action": "ssm:GetCommandInvocation", "Resource": "*" }
+  ]
+}'
+aws iam create-access-key --user-name pulseboard-github-deploy
+```
+
+`GetCommandInvocation` does not support resource limits, so it uses `*`. It can only read command results. The last command prints the key **once**. Put it straight into GitHub, and don't save it anywhere else.
+
+**D. Give the workflow the key and the instance**
+
+GitHub repo → Settings → Secrets and variables → Actions:
+
+| Tab | Name | Value |
+|---|---|---|
+| Secrets | `AWS_ACCESS_KEY_ID` | `AccessKeyId` from step C |
+| Secrets | `AWS_SECRET_ACCESS_KEY` | `SecretAccessKey` from step C |
+| Variables | `EC2_INSTANCE_ID` | `i-...` |
+
+**Rotating the key** (for example once a year, or right away if it may have leaked): `aws iam create-access-key --user-name pulseboard-github-deploy`, update both GitHub secrets, then delete the old one with `aws iam delete-access-key --user-name pulseboard-github-deploy --access-key-id <OLD_ID>`. A user can have at most two keys.
 
 ## First-time server setup (summary)
 
@@ -130,6 +207,11 @@ Planned: move to object storage (S3 or Cloudflare R2). That means changing `src/
 | `/health` returns 503 or a failed check | Run `pm2 logs api`. Check `DATABASE_URL` and `REDIS_URL`. Neon may be waking from sleep, so retry. |
 | Uploads stay "processing" | Worker is not running. `pm2 status`, then `pm2 logs worker`. |
 | `npm ci` shows "Killed" | Out of memory. Check swap with `free -h`. |
+| Deploy job: "not authorized to perform: ssm:SendCommand" | The user policy's instance ID, account ID or document name doesn't match. Check `aws iam get-user-policy --user-name pulseboard-github-deploy --policy-name deploy-via-ssm`. |
+| Deploy job: "InvalidParameters" | The `PulseboardDeploy` document's parameters don't match what the workflow sends (`commitSha`, `allowMigrations`). |
+| Deploy job: "InvalidInstanceId" | The SSM agent is not online. Check the instance has the `pulseboard-ec2-ssm` role, then `sudo snap restart amazon-ssm-agent` and look in Fleet Manager. |
+| Deploy job stops with "this deploy adds migrations" | Apply the new SQL to Neon, then run the workflow by hand with "migrations applied" ticked. |
+| Deploy job says it rolled back | The new code failed `/health`. The old version is running. Read the `pm2 logs` lines printed in the job output. |
 | Red WebSocket error in the console | Usually a one-off during login, or a browser shield. Socket.IO falls back to polling. Check Network → WS for a `101`. |
 | Redis log says "Eviction policy is volatile-lru" | Redis Cloud free plan setting. BullMQ prefers `noeviction`. Safe to ignore at this size. |
 

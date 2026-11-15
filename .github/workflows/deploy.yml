@@ -1,0 +1,137 @@
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      migrations_applied:
+        description: "I already applied this deploy's new migrations to Neon"
+        type: boolean
+        default: false
+
+# Never run two deploys at once. A newer push waits for the running one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Throwaway Postgres and Redis for this run only, like the local Docker ones.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pulseboard_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pulseboard_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Jest can't load the generated Prisma client on Node 20
+      # ("Unexpected token 'export'"). Local dev uses Node 22 too.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # .env.test is gitignored, so write the CI version of it here.
+      - name: Write .env.test
+        run: |
+          cat > .env.test <<EOF
+          DATABASE_URL=$DATABASE_URL
+          JWT_SECRET=ci-only-secret
+          CORS_ORIGIN=http://localhost:5173
+          RATE_LIMIT_MAX=2000
+          REDIS_URL=redis://127.0.0.1:6379
+          EOF
+
+      - name: Apply migrations
+        run: |
+          for f in migrations/*.sql; do
+            echo "applying $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - run: npx prisma generate
+
+      # --forceExit so a test that leaves a connection open can't hang the run.
+      - run: npm test -- --forceExit
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      AWS_REGION: ap-southeast-2
+      INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      ALLOW_MIGRATIONS: ${{ inputs.migrations_applied == true }}
+
+    steps:
+      # The account's Free plan blocks OIDC, so this is a stored key. It may only
+      # run the PulseboardDeploy document (scripts/ssm-deploy-document.yaml) on
+      # this one instance.
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Send deploy command to the server
+        id: send
+        run: |
+          command_id=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name PulseboardDeploy \
+            --comment "deploy ${GITHUB_SHA::7}" \
+            --parameters "commitSha=$GITHUB_SHA,allowMigrations=$ALLOW_MIGRATIONS" \
+            --query Command.CommandId --output text)
+          echo "command_id=$command_id" >> "$GITHUB_OUTPUT"
+          echo "Sent SSM command $command_id"
+
+      - name: Wait for the deploy to finish
+        env:
+          COMMAND_ID: ${{ steps.send.outputs.command_id }}
+        run: |
+          status=Pending
+          for _ in $(seq 1 180); do
+            sleep 5
+            status=$(aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$status" in
+              Pending|InProgress|Delayed) continue ;;
+              *) break ;;
+            esac
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" \
+            --query '[StandardOutputContent, StandardErrorContent]' --output text || true
+
+          echo "Final status: $status"
+          [ "$status" = "Success" ]
